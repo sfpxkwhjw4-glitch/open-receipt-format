@@ -58,7 +58,7 @@ test("validateDecision requires a pre-spend intent receipt for spends", () => {
 
 test("buildDecision stamps orf_version and conforms to the spec shape", () => {
   const d = orf.buildDecision(decisionSpec(), "2026-06-14T07:00:00.000Z");
-  assert.equal(d.orf_version, "0.1");
+  assert.equal(d.orf_version, "0.2");
   assert.equal(d.record, "decision");
   assert.equal(d.id, "d1");
   assert.equal(d.spend, null);
@@ -92,7 +92,7 @@ test("differential maps falsifier observation to a checkable status", () => {
 
 test("buildOutcome stamps orf_version and derives status", () => {
   const o = orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: false }, "t");
-  assert.equal(o.orf_version, "0.1");
+  assert.equal(o.orf_version, "0.2");
   assert.equal(o.status, "held");
   assert.equal(orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: true }, "t").status, "falsified");
   assert.equal(orf.buildOutcome({ decision_id: "d1", observed_result: "x" }, "t").status, "undetermined");
@@ -116,6 +116,160 @@ test("ledger round-trips and supports idempotency lookup", () => {
     assert.equal(ledger.length, 2);
     assert.equal(orf.findDecision(ledger, "d1").id, "d1");
     assert.equal(orf.findDecision(ledger, "nope"), null);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+});
+
+// --- v0.2: Typed falsifiers --------------------------------------------------
+
+test("normalizeFalsifier wraps a plain string as type=string", () => {
+  const n = orf.normalizeFalsifier("comment absent on read-back");
+  assert.deepEqual(n, { type: "string", value: "comment absent on read-back" });
+});
+
+test("normalizeFalsifier passes a typed object through unchanged", () => {
+  const f = { type: "uri", value: "GET /x — absent", window_seconds: 300 };
+  assert.deepEqual(orf.normalizeFalsifier(f), f);
+});
+
+test("normalizeFalsifier returns null for missing falsifier", () => {
+  assert.equal(orf.normalizeFalsifier(null), null);
+  assert.equal(orf.normalizeFalsifier(undefined), null);
+});
+
+test("validateFalsifier accepts a plain string", () => {
+  assert.deepEqual(orf.validateFalsifier("error_rate > 0.8%"), []);
+});
+
+test("validateFalsifier accepts a typed uri object", () => {
+  assert.deepEqual(orf.validateFalsifier({ type: "uri", value: "GET /health — status != active" }), []);
+});
+
+test("validateFalsifier accepts a typed predicate with window", () => {
+  assert.deepEqual(orf.validateFalsifier({ type: "predicate", value: "error_rate > 0.008", window_seconds: 3600 }), []);
+});
+
+test("validateFalsifier rejects unknown type", () => {
+  const e = orf.validateFalsifier({ type: "sql", value: "SELECT..." });
+  assert.ok(e.some((m) => m.includes("falsifier.type must be one of")));
+});
+
+test("validateFalsifier rejects object without value", () => {
+  const e = orf.validateFalsifier({ type: "uri" });
+  assert.ok(e.some((m) => m.includes("falsifier.value is required")));
+});
+
+test("validateFalsifier rejects non-positive window_seconds", () => {
+  const e = orf.validateFalsifier({ type: "uri", value: "GET /x", window_seconds: -1 });
+  assert.ok(e.some((m) => m.includes("window_seconds must be a positive number")));
+});
+
+test("validateFalsifier rejects null (required field)", () => {
+  const e = orf.validateFalsifier(null);
+  assert.ok(e.some((m) => m.includes("falsifier is required")));
+});
+
+test("buildDecision normalizes a plain-string falsifier to typed object", () => {
+  const d = orf.buildDecision(decisionSpec({ falsifier: "error_rate rises" }), "t");
+  assert.deepEqual(d.falsifier, { type: "string", value: "error_rate rises" });
+});
+
+test("buildDecision stores a typed uri falsifier unchanged", () => {
+  const f = { type: "uri", value: "GET /status — absent", window_seconds: 300 };
+  const d = orf.buildDecision(decisionSpec({ falsifier: f }), "t");
+  assert.deepEqual(d.falsifier, f);
+});
+
+test("buildDecision includes action_idempotency_key when provided", () => {
+  const d = orf.buildDecision(decisionSpec({ action_idempotency_key: "aik-001" }), "t");
+  assert.equal(d.action_idempotency_key, "aik-001");
+});
+
+test("buildDecision omits action_idempotency_key when not provided", () => {
+  const d = orf.buildDecision(decisionSpec(), "t");
+  assert.ok(!("action_idempotency_key" in d));
+});
+
+test("replayPlan includes action_idempotency_key when present", () => {
+  const d = orf.buildDecision(decisionSpec({ action_idempotency_key: "aik-001" }), "t");
+  const plan = orf.replayPlan(d);
+  assert.equal(plan.action_idempotency_key, "aik-001");
+});
+
+// --- v0.2: Reconcile record --------------------------------------------------
+
+function reconcileSpec(o = {}) {
+  return Object.assign(
+    {
+      id: "r1",
+      open_decision_id: "d1",
+      world_state_read: "GET /comments — our comment present at position 7",
+      gap_detected: false,
+      resolution: "completed"
+    },
+    o
+  );
+}
+
+test("validateReconcile accepts a complete spec", () => {
+  assert.deepEqual(orf.validateReconcile(reconcileSpec()), []);
+});
+
+test("validateReconcile flags all missing required fields", () => {
+  const e = orf.validateReconcile({});
+  assert.ok(e.some((m) => m.includes("id is required")));
+  assert.ok(e.some((m) => m.includes("open_decision_id is required")));
+  assert.ok(e.some((m) => m.includes("world_state_read is required")));
+  assert.ok(e.some((m) => m.includes("gap_detected must be a boolean")));
+  assert.ok(e.some((m) => m.includes("resolution must be one of")));
+});
+
+test("validateReconcile rejects non-boolean gap_detected", () => {
+  const e = orf.validateReconcile(reconcileSpec({ gap_detected: "no" }));
+  assert.ok(e.some((m) => m.includes("gap_detected must be a boolean")));
+});
+
+test("validateReconcile rejects unknown resolution", () => {
+  const e = orf.validateReconcile(reconcileSpec({ resolution: "maybe" }));
+  assert.ok(e.some((m) => m.includes("resolution must be one of")));
+});
+
+test("validateReconcile accepts all valid resolution states", () => {
+  for (const r of ["completed", "not_completed", "ambiguous"]) {
+    assert.deepEqual(orf.validateReconcile(reconcileSpec({ resolution: r, gap_detected: r !== "completed" })), []);
+  }
+});
+
+test("buildReconcile stamps orf_version and record type", () => {
+  const r = orf.buildReconcile(reconcileSpec(), "t");
+  assert.equal(r.orf_version, "0.2");
+  assert.equal(r.record, "reconcile");
+  assert.equal(r.open_decision_id, "d1");
+  assert.equal(r.gap_detected, false);
+  assert.equal(r.resolution, "completed");
+  assert.equal(r.notes, "");
+});
+
+test("buildReconcile preserves notes when provided", () => {
+  const r = orf.buildReconcile(reconcileSpec({ notes: "manual inspection confirmed" }), "t");
+  assert.equal(r.notes, "manual inspection confirmed");
+});
+
+test("ledger round-trips a decision + outcome + reconcile triple", () => {
+  const file = path.join(os.tmpdir(), `orf-v2-test-${process.pid}.jsonl`);
+  try {
+    fs.rmSync(file, { force: true });
+    const d = orf.buildDecision(decisionSpec(), "t1");
+    const o = orf.buildOutcome({ decision_id: "d1", observed_result: "live", falsifier_observed: false }, "t2");
+    const r = orf.buildReconcile(reconcileSpec(), "t3");
+    orf.appendRecord(file, d);
+    orf.appendRecord(file, o);
+    orf.appendRecord(file, r);
+    const ledger = orf.loadLedger(file);
+    assert.equal(ledger.length, 3);
+    assert.equal(ledger[2].record, "reconcile");
+    assert.equal(ledger[2].resolution, "completed");
   } finally {
     fs.rmSync(file, { force: true });
   }

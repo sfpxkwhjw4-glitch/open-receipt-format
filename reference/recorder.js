@@ -18,9 +18,11 @@
 
 const fs = require("fs");
 
-const ORF_VERSION = "0.1";
+const ORF_VERSION = "0.2";
 const RECONSTRUCTION_CLASSES = ["recomputable", "irrecoverable"];
 const OUTCOME_STATES = ["held", "falsified", "undetermined"];
+const FALSIFIER_TYPES = ["string", "uri", "predicate"];
+const RESOLUTION_STATES = ["completed", "not_completed", "ambiguous"];
 
 function asArray(v) {
   if (Array.isArray(v)) return v;
@@ -28,7 +30,32 @@ function asArray(v) {
   return [v];
 }
 
-// --- Decisions -------------------------------------------------------------
+// --- Falsifiers (v0.2) -------------------------------------------------------
+
+// Normalize a falsifier to the typed-object form. A plain string is v0.1
+// behavior; wrap it transparently so the rest of the code works uniformly.
+function normalizeFalsifier(f) {
+  if (!f) return null;
+  if (typeof f === "string") return { type: "string", value: f };
+  return f;
+}
+
+function validateFalsifier(f) {
+  if (!f) return ["falsifier is required (the one observation that would prove this wrong)"];
+  if (typeof f === "string") return [];
+  if (typeof f !== "object") return ["falsifier must be a string or typed object"];
+  const errors = [];
+  if (!FALSIFIER_TYPES.includes(f.type)) {
+    errors.push(`falsifier.type must be one of: ${FALSIFIER_TYPES.join(", ")}`);
+  }
+  if (!f.value) errors.push("falsifier.value is required");
+  if (f.window_seconds !== undefined && (!Number.isFinite(Number(f.window_seconds)) || Number(f.window_seconds) <= 0)) {
+    errors.push("falsifier.window_seconds must be a positive number if present");
+  }
+  return errors;
+}
+
+// --- Decisions ---------------------------------------------------------------
 
 function validateDecision(spec) {
   if (!spec || typeof spec !== "object") return ["decision spec must be an object"];
@@ -38,7 +65,8 @@ function validateDecision(spec) {
   if (!spec.precondition_read) errors.push("precondition_read is required (what state did you actually read?)");
   if (!spec.decision_rule) errors.push("decision_rule is required (the rule in force when you decided)");
   if (!spec.action) errors.push("action is required");
-  if (!spec.falsifier) errors.push("falsifier is required (the one observation that would prove this wrong)");
+
+  errors.push(...validateFalsifier(spec.falsifier));
 
   const c = Number(spec.confidence);
   if (!Number.isFinite(c)) errors.push("confidence must be numeric (0..1)");
@@ -59,7 +87,7 @@ function validateDecision(spec) {
 }
 
 function buildDecision(spec, now) {
-  return {
+  const record = {
     orf_version: ORF_VERSION,
     record: "decision",
     recorded_at: now,
@@ -70,7 +98,7 @@ function buildDecision(spec, now) {
     decision_rule: spec.decision_rule,
     action: spec.action,
     confidence: Number(spec.confidence),
-    falsifier: spec.falsifier,
+    falsifier: normalizeFalsifier(spec.falsifier),
     reconstruction_class: spec.reconstruction_class,
     spend: spec.spend
       ? {
@@ -83,6 +111,8 @@ function buildDecision(spec, now) {
       : null,
     tags: asArray(spec.tags)
   };
+  if (spec.action_idempotency_key) record.action_idempotency_key = spec.action_idempotency_key;
+  return record;
 }
 
 // --- Outcomes --------------------------------------------------------------
@@ -127,13 +157,44 @@ function differential(falsifierObserved) {
 // Everything a future agent needs to re-run the check without trusting the
 // original assertion.
 function replayPlan(decision) {
-  return {
+  const plan = {
     id: decision.id,
     precondition_read: decision.precondition_read,
     action: decision.action,
     falsifier: decision.falsifier,
     decision_rule: decision.decision_rule,
     reconstruction_class: decision.reconstruction_class
+  };
+  if (decision.action_idempotency_key) plan.action_idempotency_key = decision.action_idempotency_key;
+  return plan;
+}
+
+// --- Reconcile (v0.2) --------------------------------------------------------
+
+function validateReconcile(spec) {
+  if (!spec || typeof spec !== "object") return ["reconcile spec must be an object"];
+  const errors = [];
+  if (!spec.id) errors.push("id is required");
+  if (!spec.open_decision_id) errors.push("open_decision_id is required");
+  if (!spec.world_state_read) errors.push("world_state_read is required (what did you observe on waking?)");
+  if (typeof spec.gap_detected !== "boolean") errors.push("gap_detected must be a boolean");
+  if (!RESOLUTION_STATES.includes(spec.resolution)) {
+    errors.push(`resolution must be one of: ${RESOLUTION_STATES.join(", ")}`);
+  }
+  return errors;
+}
+
+function buildReconcile(spec, now) {
+  return {
+    orf_version: ORF_VERSION,
+    record: "reconcile",
+    recorded_at: now,
+    id: spec.id,
+    open_decision_id: spec.open_decision_id,
+    world_state_read: spec.world_state_read,
+    gap_detected: spec.gap_detected,
+    resolution: spec.resolution,
+    notes: spec.notes || ""
   };
 }
 
@@ -163,13 +224,19 @@ module.exports = {
   ORF_VERSION,
   RECONSTRUCTION_CLASSES,
   OUTCOME_STATES,
+  FALSIFIER_TYPES,
+  RESOLUTION_STATES,
   asArray,
+  normalizeFalsifier,
+  validateFalsifier,
   validateDecision,
   buildDecision,
   validateOutcome,
   buildOutcome,
   differential,
   replayPlan,
+  validateReconcile,
+  buildReconcile,
   appendRecord,
   loadLedger,
   findDecision

@@ -1,6 +1,6 @@
 {
   "name": "open-receipt-format",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A minimal, format-agnostic schema for agent action receipts — spec + zero-dependency reference implementation.",
   "license": "MIT",
   "private": false,
