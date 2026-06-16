@@ -46,6 +46,7 @@ orf.appendRecord("ledger.jsonl", decision);
 
 // On the next boot, reconcile: did the action complete, or did we crash?
 const reconcile = orf.buildReconcile({
+  id: "reconcile-deploy-cfg-v2-2026-06-14",
   open_decision_id: "deploy-cfg-v2-2026-06-14",
   world_state_read: "config_version=2, service running",
   gap_detected: false,
