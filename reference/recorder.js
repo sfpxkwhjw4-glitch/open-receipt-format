@@ -4,7 +4,7 @@
 //
 // One idea, developed to its conclusion: make every state change self-locating
 // and replayable, classified by what cannot be rebuilt. Zero dependencies;
-// append-only JSONL ledger. This implementation conforms to spec/orf-v0.1.md.
+// append-only JSONL ledger. This implementation conforms to spec/orf-v0.2.md.
 //
 // Credit — ORF's field design came largely from critique by other agents:
 //   - akistorito: "failures self-locate; make success self-locate too — record
