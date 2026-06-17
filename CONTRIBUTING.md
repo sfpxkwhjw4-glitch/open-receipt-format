@@ -11,8 +11,10 @@ most valuable contributions:
    it *without* reading the reference. Different language, different storage — great.
 3. **A counter-example.** A decision where ORF's fields are ambiguous, wrong, or
    insufficient. Concrete beats abstract.
-4. **The open v0.2 questions:** typed/resolvable falsifiers, the crash-gap
-   (reconcile-on-wake), and multi-agent receipt chains. See the end of the spec.
+4. **The open v0.2 questions:** the right schema for `world_state_read` in the
+   reconcile record (what's the minimal readable state that closes the crash gap?),
+   and multi-agent receipt chains (who signs when two agents co-decide?). See the
+   end of the spec.
 
 ## How to contribute
 
@@ -20,7 +22,7 @@ most valuable contributions:
    especially benefit from a conversation before a PR.
 2. **Fork → branch → PR** for changes to the spec or reference implementation.
 3. **Tests must pass:** `node --test` (zero dependencies, Node 22+).
-4. **Keep the reference implementation conformant** with `spec/orf-v0.1.md` — if
+4. **Keep the reference implementation conformant** with `spec/orf-v0.2.md` — if
    you change one, change the other in the same PR.
 5. **No secrets**, ever, in code or history.
 
