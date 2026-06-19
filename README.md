@@ -16,51 +16,52 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 - 📄 **Spec (current):** [`spec/orf-v0.2.md`](spec/orf-v0.2.md)
 - 📄 **Spec (v0.1):** [`spec/orf-v0.1.md`](spec/orf-v0.1.md) — still valid; v0.2 is fully backward compatible
 - 🔧 **Reference implementation:** [`reference/recorder.js`](reference/recorder.js) — zero dependencies, Node 22+
+- 🔧 **Drop-in helper:** [`reference/helper.js`](reference/helper.js) — compact builder API, ~60 lines, copy into any project
+- 🧪 **Conformance validators:** [`conformance/validate.js`](conformance/validate.js) — check any ORF record against the spec
+- 💡 **Examples:** [`examples/file-agent.js`](examples/file-agent.js), [`examples/http-agent.js`](examples/http-agent.js)
 - 🤝 **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
-## Quickstart
+## Drop-in helper
+
+[`reference/helper.js`](reference/helper.js) — copy into your project or `require` directly.
+Zero dependencies. No ledger or file I/O built in — just the record builders.
 
 ```js
-const orf = require("./reference/recorder");
+const orf = require("./reference/helper");
 
-// Record a decision. The falsifier is typed (v0.2): a URI someone can resolve,
-// not just a string someone has to believe.
-const decision = orf.buildDecision({
-  id: "deploy-cfg-v2-2026-06-14",
-  actor_agent: "my-agent",
+// 1. Before acting — write the decision receipt
+const dec = orf.decision("deploy-cfg-v2", {
+  actor: "my-agent",
   intent: "Deploy config v2 to cut retry noise",
-  precondition_read: "error_rate=0.4%, config_version=1",
-  decision_rule: "deploy when error_rate > 0.2% and 7+ days since last deploy",
-  action: "wrote config v2, restarted service",
-  action_idempotency_key: "deploy-cfg-v2",   // key for the side-effect boundary
-  confidence: 0.82,
+  precondition: "error_rate=0.4%, config_version=1",
+  rule: "deploy when error_rate > 0.2% and 7+ days since last deploy",
+  action: "write config v2, restart service",
+  idempotencyKey: "deploy-cfg-v2",       // key for the side effect, not the receipt
   falsifier: {
     type: "uri",
-    value: "GET /metrics/error_rate — rate > 0.8% within 3600s",
+    value: "GET /metrics/error_rate — rate > 0.8% within 1h",
     window_seconds: 3600
   },
-  reconstruction_class: "irrecoverable"
-}, new Date().toISOString());
+  confidence: 0.82,
+  reconClass: "irrecoverable"
+});
 
-orf.appendRecord("ledger.jsonl", decision);
-
-// On the next boot, reconcile: did the action complete, or did we crash?
-const reconcile = orf.buildReconcile({
-  id: "reconcile-deploy-cfg-v2-2026-06-14",
-  open_decision_id: "deploy-cfg-v2-2026-06-14",
-  world_state_read: "config_version=2, service running",
-  gap_detected: false,
+// 2. On boot — close the crash gap
+const rec = orf.reconcile("reconcile-deploy-cfg-v2", {
+  openDecisionId: "deploy-cfg-v2",
+  worldStateRead: "config_version=2, service running",
+  gapDetected: false,
   resolution: "completed"
-}, new Date().toISOString());
+});
 
-orf.appendRecord("ledger.jsonl", reconcile);
+// 3. When the outcome is observable — record it
+const out = orf.outcome("deploy-cfg-v2", {
+  observedResult: "error_rate fell to 0.1% in 20 min",
+  falsifierObserved: false   // false = "held" (the falsifying condition did not occur)
+});
 
-// When the outcome is observable, record it:
-orf.appendRecord("ledger.jsonl", orf.buildOutcome({
-  decision_id: "deploy-cfg-v2-2026-06-14",
-  observed_result: "error_rate fell to 0.1% in 20 min",
-  falsifier_observed: false            // -> status: "held"
-}, new Date().toISOString()));
+// Serialize to your ledger: append to JSONL, POST to a store, etc.
+// fs.appendFileSync("ledger.jsonl", JSON.stringify(dec) + "\n");
 ```
 
 A plain string falsifier still works (v0.1 behavior, fully compatible):
@@ -69,10 +70,44 @@ A plain string falsifier still works (v0.1 behavior, fully compatible):
 falsifier: "error_rate rises above 0.8% within 1 hour"
 ```
 
+The full reference implementation ([`reference/recorder.js`](reference/recorder.js)) adds validation,
+append-only JSONL persistence, idempotency lookup, and `replayPlan()`.
+
 Run the tests:
 
 ```bash
 node --test
+```
+
+## Examples
+
+Two worked examples showing how `world_state_read` differs by action type:
+
+- **[`examples/file-agent.js`](examples/file-agent.js)** — file-writing agent. `world_state_read` captures file state (exists, content hash), not just a path. Uses `action_idempotency_key` as the content hash so a retry writes identical bytes.
+- **[`examples/http-agent.js`](examples/http-agent.js)** — HTTP-calling agent. `world_state_read` captures the response state (status code, version field). Uses a `uri` typed falsifier so any agent with HTTP access can verify the claim.
+
+Both examples show the boot-time reconcile pattern (crash gap closure).
+
+## Self-certify your implementation
+
+[`conformance/validate.js`](conformance/validate.js) contains implementation-agnostic validators.
+Pass any ORF record — from any language — and get back a list of conformance errors.
+An empty list means the record conforms to ORF v0.2.
+
+```js
+const { validateRecord } = require("./conformance/validate");
+
+// Your implementation produces a record (any language → JSON → Node):
+const errors = validateRecord(myRecord);
+console.log(errors); // [] means conforming
+```
+
+The conformance test suite ([`conformance/orf.conformance.test.js`](conformance/orf.conformance.test.js))
+shows the full pattern and runs against the reference implementation. Replace the `orf.*` calls with
+your own builders to self-certify.
+
+```bash
+node --test conformance/orf.conformance.test.js
 ```
 
 ## What's in v0.2
@@ -91,14 +126,26 @@ All v0.1 records are valid v0.2 records.
 
 ## Status
 
-**v0.2, draft.** Both specs are stable enough to implement against; breaking changes
-would come with a v1.0 announcement. Looking for:
+**v0.2, draft.** The spec is stable enough to implement against; breaking changes
+would come with a v1.0 announcement.
 
-- **Counter-examples** — receipts from real systems that don't fit these four fields
-- **Alternative implementations** — the surest test that a spec is real is someone
-  implementing it without reading the reference
-- **Critique of the reconcile record** — it closes the crash gap conceptually, but
-  the right schema for `world_state_read` is still an open question
+**What would make this better — in order of usefulness:**
+
+1. **Implement ORF and tell us where it broke.** The surest test of a spec is someone
+   implementing it without reading the reference. Use [`reference/helper.js`](reference/helper.js)
+   as a starting point, run [`conformance/validate.js`](conformance/validate.js) against
+   your records, and open an issue with anything that didn't fit. That gap is where the
+   standard actually lives.
+
+2. **One real `reconcile` record** from a system that actually crashed and recovered.
+   The reconcile spec was designed from first principles. A production crash case may
+   expose missing fields in `world_state_read`.
+
+3. **Typed falsifier counter-examples** — a case where `string`, `uri`, and `predicate`
+   all miss. What type is missing?
+
+4. **`action_idempotency_key` interop** — if two independent implementations use this
+   field, do they mean the same thing by it?
 
 ## Origin
 
