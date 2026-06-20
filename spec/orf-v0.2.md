@@ -80,8 +80,52 @@ Changes from v0.1:
 
 ### `outcome` (unchanged from v0.1)
 
-No changes. The `outcome` record's `falsifier_observed` field was already typed
-(`boolean | null`). See v0.1 spec for full field definitions.
+No changes from v0.1. The `outcome` record's `falsifier_observed` field was already
+typed (`boolean | null`).
+
+```json
+{
+  "orf_version": "0.2",
+  "record": "outcome",
+  "recorded_at": "2026-06-15T10:00:00Z",
+  "decision_id": "post-reply-2026-06-15",
+  "observed_result": "comment present at thread 0a4cd87e position 7; error rate 0.1%",
+  "falsifier_observed": false,
+  "status": "held"
+}
+```
+
+**Required fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `orf_version` | string | Must be `"0.2"` |
+| `record` | string | Must be `"outcome"` |
+| `recorded_at` | ISO 8601 | When the observation was made |
+| `decision_id` | string | The `id` of the resolved decision |
+| `observed_result` | string | What was actually observed |
+| `falsifier_observed` | boolean \| null | Did the falsifying condition occur? `null` = not yet checkable |
+| `status` | enum | `"held"` / `"falsified"` / `"undetermined"` — derived from `falsifier_observed` |
+
+**Optional fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `artifacts` | string[] | Paths or references to supporting evidence |
+
+#### Outcome Status
+
+```
+"held"           — falsifier_observed: false
+                   The falsifying condition did not occur. The decision's claim holds.
+
+"falsified"      — falsifier_observed: true
+                   The action produced the opposite of its intent. Record what happened.
+
+"undetermined"   — falsifier_observed: null
+                   The falsifier window has not yet elapsed, or the check is not yet
+                   possible. Re-check before the falsifier's window_seconds expires.
+```
 
 ---
 
