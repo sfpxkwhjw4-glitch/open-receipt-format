@@ -15,6 +15,7 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 
 - 📄 **Spec (current):** [`spec/orf-v0.2.md`](spec/orf-v0.2.md)
 - 📄 **Spec (v0.1):** [`spec/orf-v0.1.md`](spec/orf-v0.1.md) — still valid; v0.2 is fully backward compatible
+- 🗂 **JSON Schema:** [`spec/orf-v0.2.schema.json`](spec/orf-v0.2.schema.json) — machine-readable; use with ajv, jsonschema (Python), gojsonschema, or any draft-07 validator
 - 🔧 **Reference implementation:** [`reference/recorder.js`](reference/recorder.js) — zero dependencies, Node 22+
 - 🔧 **Drop-in helper:** [`reference/helper.js`](reference/helper.js) — compact builder API, ~60 lines, copy into any project
 - 🧪 **Conformance validators:** [`conformance/validate.js`](conformance/validate.js) — check any ORF record against the spec
@@ -92,9 +93,7 @@ All three examples show the boot-time reconcile pattern (crash gap closure). For
 
 ## Self-certify your implementation
 
-[`conformance/validate.js`](conformance/validate.js) contains implementation-agnostic validators.
-Pass any ORF record — from any language — and get back a list of conformance errors.
-An empty list means the record conforms to ORF v0.2.
+**From Node (any language → JSON → Node):** [`conformance/validate.js`](conformance/validate.js) contains implementation-agnostic validators. Pass any ORF record and get back a list of conformance errors. An empty list means the record conforms to ORF v0.2.
 
 ```js
 const { validateRecord } = require("./conformance/validate");
@@ -102,6 +101,17 @@ const { validateRecord } = require("./conformance/validate");
 // Your implementation produces a record (any language → JSON → Node):
 const errors = validateRecord(myRecord);
 console.log(errors); // [] means conforming
+```
+
+**From Python / Go / Ruby (or any language with a JSON Schema validator):** use [`spec/orf-v0.2.schema.json`](spec/orf-v0.2.schema.json) directly with your ecosystem's JSON Schema draft-07 validator:
+
+```python
+# Python example — pip install jsonschema
+import json, jsonschema
+
+schema = json.load(open("spec/orf-v0.2.schema.json"))
+record = { ... }  # your implementation's output
+jsonschema.validate(record, schema)  # raises ValidationError if non-conforming
 ```
 
 The conformance test suite ([`conformance/orf.conformance.test.js`](conformance/orf.conformance.test.js))

@@ -1,0 +1,273 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "orf-v0.2.schema.json",
+  "title": "Open Receipt Format v0.2",
+  "description": "Machine-readable schema for ORF v0.2 records. Use with any JSON Schema validator (ajv, jsonschema, gojsonschema, etc.). See spec/orf-v0.2.md for field semantics.",
+  "oneOf": [
+    { "$ref": "#/definitions/decision" },
+    { "$ref": "#/definitions/outcome" },
+    { "$ref": "#/definitions/reconcile" }
+  ],
+  "definitions": {
+    "iso8601": {
+      "type": "string",
+      "description": "ISO 8601 datetime string (e.g., 2026-06-15T09:00:00Z)"
+    },
+    "falsifier_typed": {
+      "type": "object",
+      "required": ["type", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "uri", "predicate"],
+          "description": "string: free-form text (v0.1 compat); uri: resolvable reference + failure condition; predicate: checkable expression"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The falsifying condition"
+        },
+        "window_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "How long the falsifier window stays open; check before expiry"
+        }
+      }
+    },
+    "falsifier": {
+      "description": "What would prove this decision wrong — a string (v0.1 compat) or a typed object (v0.2 preferred for automatic checkability).",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "$ref": "#/definitions/falsifier_typed"
+        }
+      ]
+    },
+    "spend": {
+      "type": "object",
+      "required": ["idempotency_key", "max_amount_usd"],
+      "properties": {
+        "idempotency_key": {
+          "type": "string",
+          "description": "Prevents double-spend on retry — write intent receipt before acting"
+        },
+        "payee": {
+          "type": "string"
+        },
+        "max_amount_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "funding_authority": {
+          "type": "string",
+          "description": "Required when max_amount_usd > 0"
+        },
+        "settled": {
+          "type": "boolean",
+          "description": "false at write time (intent); update to true when confirmed"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": [
+        "orf_version",
+        "record",
+        "recorded_at",
+        "id",
+        "actor_agent",
+        "intent",
+        "precondition_read",
+        "decision_rule",
+        "action",
+        "confidence",
+        "falsifier",
+        "reconstruction_class"
+      ],
+      "properties": {
+        "orf_version": {
+          "type": "string",
+          "enum": ["0.1", "0.2"],
+          "description": "v0.1 records are valid v0.2 (fully backward compatible)"
+        },
+        "record": {
+          "type": "string",
+          "const": "decision"
+        },
+        "recorded_at": {
+          "$ref": "#/definitions/iso8601"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the ledger; idempotency key for the receipt (not the action)"
+        },
+        "actor_agent": {
+          "type": "string",
+          "description": "Identity of the agent taking the action"
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why: the goal this action serves"
+        },
+        "precondition_read": {
+          "type": "string",
+          "minLength": 1,
+          "description": "State actually observed before acting — not assumed, observed"
+        },
+        "decision_rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Rule or policy in force at decision time — recorded now, not reconstructed later"
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What was done — specific enough to replay or audit"
+        },
+        "action_idempotency_key": {
+          "type": "string",
+          "description": "Key for the side-effect boundary — distinct from the receipt id (different idempotency gates)"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Agent's stated confidence [0..1] that the action achieves its intent — enables calibration"
+        },
+        "falsifier": {
+          "$ref": "#/definitions/falsifier"
+        },
+        "reconstruction_class": {
+          "type": "string",
+          "enum": ["recomputable", "irrecoverable"],
+          "description": "recomputable: can be rebuilt from still-available inputs (evictable); irrecoverable: original is irreplaceable (must be pinned)"
+        },
+        "spend": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/definitions/spend" }
+          ],
+          "description": "Present when the action involves expenditure; null when none"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Domain-specific labels for filtering"
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "required": [
+        "orf_version",
+        "record",
+        "recorded_at",
+        "decision_id",
+        "observed_result",
+        "falsifier_observed",
+        "status"
+      ],
+      "properties": {
+        "orf_version": {
+          "type": "string",
+          "enum": ["0.1", "0.2"]
+        },
+        "record": {
+          "type": "string",
+          "const": "outcome"
+        },
+        "recorded_at": {
+          "$ref": "#/definitions/iso8601"
+        },
+        "decision_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The id of the resolved decision"
+        },
+        "observed_result": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What was actually observed"
+        },
+        "falsifier_observed": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "null" }
+          ],
+          "description": "Did the falsifying condition occur? false=held; true=falsified; null=undetermined (not yet checkable)"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["held", "falsified", "undetermined"],
+          "description": "Derived from falsifier_observed: false→held; true→falsified; null→undetermined"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths or references to supporting evidence"
+        }
+      }
+    },
+    "reconcile": {
+      "type": "object",
+      "required": [
+        "orf_version",
+        "record",
+        "recorded_at",
+        "id",
+        "open_decision_id",
+        "world_state_read",
+        "gap_detected",
+        "resolution"
+      ],
+      "properties": {
+        "orf_version": {
+          "type": "string",
+          "const": "0.2",
+          "description": "reconcile is a v0.2 record type; v0.1 implementations do not emit it"
+        },
+        "record": {
+          "type": "string",
+          "const": "reconcile"
+        },
+        "recorded_at": {
+          "$ref": "#/definitions/iso8601"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique within the ledger"
+        },
+        "open_decision_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The id of the decision being reconciled"
+        },
+        "world_state_read": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What was actually observed in the world on waking — the authoritative crash-gap check"
+        },
+        "gap_detected": {
+          "type": "boolean",
+          "description": "Did the agent find a gap between the pre-sleep receipt and actual world state?"
+        },
+        "resolution": {
+          "type": "string",
+          "enum": ["completed", "not_completed", "ambiguous"],
+          "description": "completed: no gap (action completed); not_completed: safe to retry; ambiguous: do not retry without manual review"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Explanation of resolution — required in practice when resolution=ambiguous"
+        }
+      }
+    }
+  }
+}
