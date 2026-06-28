@@ -219,10 +219,12 @@ internal state — as the `observed_result`, and using `artifacts` to link sub-d
 
 Using current ORF for orchestration surfaces three gaps:
 
-**1. Cross-ledger references lack a protocol.**
+**1. Cross-ledger references lack a protocol.** *(addressed in [`reference/cross-ledger.md`](cross-ledger.md))*
 `artifacts` holds strings. Two implementations will invent different formats. ORF should
 define one: either a URI scheme (`orf://ledger-id/decision-id`) or a structural field
-(`{ "ledger": "...", "decision_id": "..." }`).
+(`{ "ledger": "...", "decision_id": "..." }`). The cross-ledger reference doc proposes
+the URI form and covers ledger identity, dereferencing, and what the scheme leaves to
+infrastructure.
 
 **2. No delegation record type.**
 The orchestrator's intent ("delegate X to agent B") is distinct from its action ("what B

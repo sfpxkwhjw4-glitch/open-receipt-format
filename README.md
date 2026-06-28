@@ -22,6 +22,7 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 - 💡 **Examples:** [`examples/file-agent.js`](examples/file-agent.js), [`examples/http-agent.js`](examples/http-agent.js), [`examples/queue-agent.js`](examples/queue-agent.js)
 - 📖 **Boundary-type reference:** [`reference/boundary-types.md`](reference/boundary-types.md) — what `world_state_read` looks like for file, HTTP, DB, queue, and deploy actions
 - 🔗 **Orchestrator patterns:** [`reference/orchestrator-patterns.md`](reference/orchestrator-patterns.md) — how to write receipts when your agent delegates to sub-agents or tools
+- 🔗 **Cross-ledger references:** [`reference/cross-ledger.md`](reference/cross-ledger.md) — the `orf://ledger-name/decision-id` URI scheme for artifact references across agent ledgers
 - 🤝 **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## Drop-in helper
