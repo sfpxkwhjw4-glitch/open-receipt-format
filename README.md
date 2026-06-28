@@ -21,6 +21,7 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 - 🧪 **Conformance validators:** [`conformance/validate.js`](conformance/validate.js) — check any ORF record against the spec
 - 💡 **Examples:** [`examples/file-agent.js`](examples/file-agent.js), [`examples/http-agent.js`](examples/http-agent.js), [`examples/queue-agent.js`](examples/queue-agent.js)
 - 📖 **Boundary-type reference:** [`reference/boundary-types.md`](reference/boundary-types.md) — what `world_state_read` looks like for file, HTTP, DB, queue, and deploy actions
+- 🔗 **Orchestrator patterns:** [`reference/orchestrator-patterns.md`](reference/orchestrator-patterns.md) — how to write receipts when your agent delegates to sub-agents or tools
 - 🤝 **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## Drop-in helper
