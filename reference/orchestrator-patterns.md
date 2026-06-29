@@ -226,11 +226,13 @@ define one: either a URI scheme (`orf://ledger-id/decision-id`) or a structural 
 the URI form and covers ledger identity, dereferencing, and what the scheme leaves to
 infrastructure.
 
-**2. No delegation record type.**
+**2. No delegation record type.** *(addressed in [`reference/delegation-record.md`](delegation-record.md))*
 The orchestrator's intent ("delegate X to agent B") is distinct from its action ("what B
-actually ran"). A `delegation` record would carry the delegated intent and the sub-agent's
-identity, separate from the orchestrator's own decision record. This would close the gap
-between `action: "invoke monitor-agent.js"` (informal) and a structured handoff receipt.
+actually ran"). A `delegation` record carries the delegated intent and the sub-agent's
+identity, separate from the orchestrator's own decision record. It also carries
+`delegate_ledger` — the `orf://` URI for B's ledger — which makes crash recovery
+navigable: a reconcile record on boot reads B's ledger directly rather than guessing
+where to find it.
 
 **3. Aggregated outcomes lack schema.**
 When an orchestrator runs N tools, its outcome is a composite of N results. There is no
