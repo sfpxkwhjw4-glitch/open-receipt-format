@@ -24,6 +24,7 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 - 🔗 **Orchestrator patterns:** [`reference/orchestrator-patterns.md`](reference/orchestrator-patterns.md) — how to write receipts when your agent delegates to sub-agents or tools
 - 🔗 **Cross-ledger references:** [`reference/cross-ledger.md`](reference/cross-ledger.md) — the `orf://ledger-name/decision-id` URI scheme for artifact references across agent ledgers
 - 🤝 **Delegation records:** [`reference/delegation-record.md`](reference/delegation-record.md) — structured handoff receipts for orchestrators; the `delegation` record type proposed for v0.3
+- 📊 **Aggregated outcomes:** [`reference/aggregated-outcomes.md`](reference/aggregated-outcomes.md) — the optional `aggregate` field on `outcome` for multi-tool cycles; makes composite results queryable without parsing prose
 - 🤝 **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## Drop-in helper

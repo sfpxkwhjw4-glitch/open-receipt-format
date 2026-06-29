@@ -234,10 +234,12 @@ identity, separate from the orchestrator's own decision record. It also carries
 navigable: a reconcile record on boot reads B's ledger directly rather than guessing
 where to find it.
 
-**3. Aggregated outcomes lack schema.**
+**3. Aggregated outcomes lack schema.** *(addressed in [`reference/aggregated-outcomes.md`](aggregated-outcomes.md))*
 When an orchestrator runs N tools, its outcome is a composite of N results. There is no
 structured way to say "3 of 5 sub-tools held; 2 were undetermined." The `observed_result`
-string is the only place to put this today, which makes it unqueryable.
+string is the only place to put this today, which makes it unqueryable. The aggregated
+outcomes doc proposes an optional `aggregate` field on `outcome` with structured counts
+and per-sub-task `decision_id` references, closing this gap for v0.3.
 
 These are not blocking issues for current use. The four patterns above all work.
 But they accumulate in any system that does significant orchestration at scale.
