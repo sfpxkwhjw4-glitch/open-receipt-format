@@ -18,7 +18,7 @@
 
 const fs = require("fs");
 
-const ORF_VERSION = "0.2";
+const ORF_VERSION = "0.3";
 const RECONSTRUCTION_CLASSES = ["recomputable", "irrecoverable"];
 const OUTCOME_STATES = ["held", "falsified", "undetermined"];
 const FALSIFIER_TYPES = ["string", "uri", "predicate"];
@@ -131,7 +131,7 @@ function validateOutcome(spec) {
 
 function buildOutcome(spec, now) {
   const falsifierObserved = spec.falsifier_observed === undefined ? null : spec.falsifier_observed;
-  return {
+  const r = {
     orf_version: ORF_VERSION,
     record: "outcome",
     recorded_at: now,
@@ -141,6 +141,38 @@ function buildOutcome(spec, now) {
     status: differential(falsifierObserved),
     artifacts: asArray(spec.artifacts)
   };
+  if (spec.aggregate) r.aggregate = spec.aggregate;
+  return r;
+}
+
+// --- Delegation (v0.3) -------------------------------------------------------
+
+function validateDelegation(spec) {
+  if (!spec || typeof spec !== "object") return ["delegation spec must be an object"];
+  const errors = [];
+  if (!spec.id) errors.push("id is required");
+  if (!spec.delegating_agent) errors.push("delegating_agent is required");
+  if (!spec.delegate_agent) errors.push("delegate_agent is required");
+  if (!spec.delegated_intent) errors.push("delegated_intent is required");
+  if (spec.falsifier !== undefined) errors.push(...validateFalsifier(spec.falsifier));
+  return errors;
+}
+
+function buildDelegation(spec, now) {
+  const r = {
+    orf_version: ORF_VERSION,
+    record: "delegation",
+    recorded_at: now,
+    id: spec.id,
+    delegating_agent: spec.delegating_agent || "unknown",
+    delegate_agent: spec.delegate_agent || "unknown",
+    delegated_intent: spec.delegated_intent
+  };
+  if (spec.delegate_ledger) r.delegate_ledger = spec.delegate_ledger;
+  if (spec.parent_decision_id) r.parent_decision_id = spec.parent_decision_id;
+  if (spec.action_idempotency_key) r.action_idempotency_key = spec.action_idempotency_key;
+  if (spec.falsifier !== undefined) r.falsifier = normalizeFalsifier(spec.falsifier);
+  return r;
 }
 
 // The differential turns a success into something checkable. A success that
@@ -237,6 +269,8 @@ module.exports = {
   replayPlan,
   validateReconcile,
   buildReconcile,
+  validateDelegation,
+  buildDelegation,
   appendRecord,
   loadLedger,
   findDecision

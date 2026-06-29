@@ -58,7 +58,7 @@ test("validateDecision requires a pre-spend intent receipt for spends", () => {
 
 test("buildDecision stamps orf_version and conforms to the spec shape", () => {
   const d = orf.buildDecision(decisionSpec(), "2026-06-14T07:00:00.000Z");
-  assert.equal(d.orf_version, "0.2");
+  assert.equal(d.orf_version, "0.3");
   assert.equal(d.record, "decision");
   assert.equal(d.id, "d1");
   assert.equal(d.spend, null);
@@ -92,7 +92,7 @@ test("differential maps falsifier observation to a checkable status", () => {
 
 test("buildOutcome stamps orf_version and derives status", () => {
   const o = orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: false }, "t");
-  assert.equal(o.orf_version, "0.2");
+  assert.equal(o.orf_version, "0.3");
   assert.equal(o.status, "held");
   assert.equal(orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: true }, "t").status, "falsified");
   assert.equal(orf.buildOutcome({ decision_id: "d1", observed_result: "x" }, "t").status, "undetermined");
@@ -243,7 +243,7 @@ test("validateReconcile accepts all valid resolution states", () => {
 
 test("buildReconcile stamps orf_version and record type", () => {
   const r = orf.buildReconcile(reconcileSpec(), "t");
-  assert.equal(r.orf_version, "0.2");
+  assert.equal(r.orf_version, "0.3");
   assert.equal(r.record, "reconcile");
   assert.equal(r.open_decision_id, "d1");
   assert.equal(r.gap_detected, false);
@@ -254,6 +254,83 @@ test("buildReconcile stamps orf_version and record type", () => {
 test("buildReconcile preserves notes when provided", () => {
   const r = orf.buildReconcile(reconcileSpec({ notes: "manual inspection confirmed" }), "t");
   assert.equal(r.notes, "manual inspection confirmed");
+});
+
+// --- v0.3: Delegation record -------------------------------------------------
+
+function delegationSpec(o = {}) {
+  return Object.assign(
+    {
+      id: "del-1",
+      delegating_agent: "orchestrator",
+      delegate_agent: "monitor-agent",
+      delegated_intent: "Harvest reply counts for the 11 target posts"
+    },
+    o
+  );
+}
+
+test("validateDelegation accepts a complete spec", () => {
+  assert.deepEqual(orf.validateDelegation(delegationSpec()), []);
+});
+
+test("validateDelegation flags missing required fields", () => {
+  const e = orf.validateDelegation({});
+  assert.ok(e.some((m) => m.includes("id is required")));
+  assert.ok(e.some((m) => m.includes("delegating_agent is required")));
+  assert.ok(e.some((m) => m.includes("delegate_agent is required")));
+  assert.ok(e.some((m) => m.includes("delegated_intent is required")));
+});
+
+test("validateDelegation validates falsifier when present", () => {
+  const e = orf.validateDelegation(delegationSpec({ falsifier: { type: "bad", value: "x" } }));
+  assert.ok(e.some((m) => m.includes("falsifier.type must be one of")));
+});
+
+test("buildDelegation stamps orf_version and record type", () => {
+  const d = orf.buildDelegation(delegationSpec(), "t");
+  assert.equal(d.orf_version, "0.3");
+  assert.equal(d.record, "delegation");
+  assert.equal(d.id, "del-1");
+  assert.equal(d.delegating_agent, "orchestrator");
+  assert.equal(d.delegate_agent, "monitor-agent");
+  assert.equal(d.delegated_intent, "Harvest reply counts for the 11 target posts");
+});
+
+test("buildDelegation includes delegate_ledger and parent_decision_id when provided", () => {
+  const d = orf.buildDelegation(delegationSpec({
+    delegate_ledger: "orf://monitor-agent/receipts",
+    parent_decision_id: "cycle-1"
+  }), "t");
+  assert.equal(d.delegate_ledger, "orf://monitor-agent/receipts");
+  assert.equal(d.parent_decision_id, "cycle-1");
+});
+
+test("buildDelegation omits optional fields when not provided", () => {
+  const d = orf.buildDelegation(delegationSpec(), "t");
+  assert.ok(!("delegate_ledger" in d));
+  assert.ok(!("parent_decision_id" in d));
+  assert.ok(!("action_idempotency_key" in d));
+  assert.ok(!("falsifier" in d));
+});
+
+test("buildDelegation normalizes a plain-string falsifier", () => {
+  const d = orf.buildDelegation(delegationSpec({ falsifier: "sub-agent exits non-zero" }), "t");
+  assert.deepEqual(d.falsifier, { type: "string", value: "sub-agent exits non-zero" });
+});
+
+test("buildOutcome includes aggregate when provided", () => {
+  const agg = { total: 2, held: 2, falsified: 0, undetermined: 0, sub_outcomes: [
+    { decision_id: "del-a", status: "held" },
+    { decision_id: "del-b", status: "held" }
+  ]};
+  const o = orf.buildOutcome({ decision_id: "d1", observed_result: "both held", falsifier_observed: false, aggregate: agg }, "t");
+  assert.deepEqual(o.aggregate, agg);
+});
+
+test("buildOutcome omits aggregate when not provided", () => {
+  const o = orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: false }, "t");
+  assert.ok(!("aggregate" in o));
 });
 
 test("ledger round-trips a decision + outcome + reconcile triple", () => {

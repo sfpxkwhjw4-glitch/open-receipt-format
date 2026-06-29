@@ -24,9 +24,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   validateFalsifier,
+  validateAggregate,
   validateDecisionRecord,
   validateReconcileRecord,
   validateOutcomeRecord,
+  validateDelegationRecord,
   validateRecord
 } = require("./validate");
 const orf = require("../reference/recorder");
@@ -212,13 +214,15 @@ test("conformance: validateRecord dispatches to the correct validator", () => {
   const d = orf.buildDecision(decisionSpec(), "t");
   const r = orf.buildReconcile(reconcileSpec(), "t");
   const o = orf.buildOutcome({ decision_id: "conf-d1", observed_result: "x", falsifier_observed: false }, "t");
+  const del = orf.buildDelegation({ id: "del-1", delegating_agent: "orch", delegate_agent: "sub", delegated_intent: "do x" }, "t");
   assert.deepEqual(validateRecord(d), []);
   assert.deepEqual(validateRecord(r), []);
   assert.deepEqual(validateRecord(o), []);
+  assert.deepEqual(validateRecord(del), []);
 });
 
 test("conformance: validateRecord rejects unknown record type", () => {
-  const e = validateRecord({ record: "audit", orf_version: "0.2" });
+  const e = validateRecord({ record: "audit", orf_version: "0.3" });
   assert.ok(e.some((m) => m.includes("unknown record type")));
 });
 
@@ -240,4 +244,118 @@ test("conformance: a complete decision/reconcile/outcome lifecycle all conform",
   assert.deepEqual(validateDecisionRecord(d), [], "decision conforms");
   assert.deepEqual(validateReconcileRecord(r), [], "reconcile conforms");
   assert.deepEqual(validateOutcomeRecord(o), [], "outcome conforms");
+});
+
+// ─── delegation record (v0.3) ────────────────────────────────────────────────
+
+test("conformance: reference buildDelegation produces a conforming record", () => {
+  const d = orf.buildDelegation({
+    id: "del-conf-1",
+    delegating_agent: "orchestrator",
+    delegate_agent: "monitor-agent",
+    delegated_intent: "Harvest reply counts for the 11 target posts",
+    delegate_ledger: "orf://monitor-agent/receipts",
+    parent_decision_id: "cycle-conf-1",
+    action_idempotency_key: "monitor-harvest-conf-1"
+  }, new Date().toISOString());
+  assert.deepEqual(validateDelegationRecord(d), []);
+});
+
+test("conformance: delegation record missing delegated_intent is invalid", () => {
+  const d = orf.buildDelegation({ id: "del-2", delegating_agent: "a", delegate_agent: "b", delegated_intent: "x" }, "t");
+  delete d.delegated_intent;
+  const e = validateDelegationRecord(d);
+  assert.ok(e.some((m) => m.includes("delegated_intent is required")));
+});
+
+test("conformance: delegation record missing delegate_agent is invalid", () => {
+  const d = orf.buildDelegation({ id: "del-3", delegating_agent: "a", delegate_agent: "b", delegated_intent: "x" }, "t");
+  delete d.delegate_agent;
+  const e = validateDelegationRecord(d);
+  assert.ok(e.some((m) => m.includes("delegate_agent is required")));
+});
+
+test("conformance: delegation record with uri falsifier is valid", () => {
+  const d = orf.buildDelegation({
+    id: "del-4", delegating_agent: "a", delegate_agent: "b", delegated_intent: "x",
+    falsifier: { type: "uri", value: "orf://b/receipts — no receipt present", window_seconds: 60 }
+  }, "t");
+  assert.deepEqual(validateDelegationRecord(d), []);
+});
+
+test("conformance: delegation without optional fields is valid", () => {
+  const d = orf.buildDelegation({ id: "del-5", delegating_agent: "a", delegate_agent: "b", delegated_intent: "x" }, "t");
+  assert.deepEqual(validateDelegationRecord(d), []);
+  assert.ok(!("delegate_ledger" in d));
+  assert.ok(!("parent_decision_id" in d));
+});
+
+// ─── aggregate field on outcome (v0.3) ───────────────────────────────────────
+
+test("conformance: outcome with valid aggregate conforms", () => {
+  const o = orf.buildOutcome({
+    decision_id: "cycle-1",
+    observed_result: "2 of 3 tasks held",
+    falsifier_observed: false,
+    aggregate: {
+      total: 3, held: 2, falsified: 0, undetermined: 1,
+      sub_outcomes: [
+        { decision_id: "del-a", status: "held" },
+        { decision_id: "del-b", status: "held" },
+        { decision_id: "del-c", status: "undetermined", notes: "network timeout" }
+      ]
+    }
+  }, new Date().toISOString());
+  assert.deepEqual(validateOutcomeRecord(o), []);
+});
+
+test("conformance: validateAggregate rejects count invariant violation", () => {
+  const e = validateAggregate({ total: 3, held: 2, falsified: 1, undetermined: 1, sub_outcomes: [] });
+  assert.ok(e.some((m) => m.includes("held + falsified + undetermined must equal total")));
+});
+
+test("conformance: validateAggregate rejects non-array sub_outcomes", () => {
+  const e = validateAggregate({ total: 1, held: 1, falsified: 0, undetermined: 0, sub_outcomes: null });
+  assert.ok(e.some((m) => m.includes("sub_outcomes must be an array")));
+});
+
+test("conformance: validateAggregate rejects missing sub_outcome decision_id", () => {
+  const e = validateAggregate({ total: 1, held: 1, falsified: 0, undetermined: 0, sub_outcomes: [{ status: "held" }] });
+  assert.ok(e.some((m) => m.includes("decision_id is required")));
+});
+
+test("conformance: validateAggregate rejects invalid sub_outcome status", () => {
+  const e = validateAggregate({ total: 1, held: 0, falsified: 0, undetermined: 1, sub_outcomes: [{ decision_id: "x", status: "pending" }] });
+  assert.ok(e.some((m) => m.includes("status must be one of")));
+});
+
+// ─── full delegation → outcome lifecycle (v0.3) ──────────────────────────────
+
+test("conformance: orchestrator delegation lifecycle conforms end-to-end", () => {
+  const now = new Date().toISOString();
+  const del = orf.buildDelegation({
+    id: "del-lifecycle-1",
+    delegating_agent: "orchestrator",
+    delegate_agent: "sub-agent",
+    delegated_intent: "Process batch of 5 records",
+    delegate_ledger: "orf://sub-agent/receipts",
+    parent_decision_id: "cycle-lifecycle-1"
+  }, now);
+  const o = orf.buildOutcome({
+    decision_id: "del-lifecycle-1",
+    observed_result: "5 records processed; all held",
+    falsifier_observed: false,
+    aggregate: {
+      total: 5, held: 5, falsified: 0, undetermined: 0,
+      sub_outcomes: [
+        { decision_id: "sub-1", status: "held" },
+        { decision_id: "sub-2", status: "held" },
+        { decision_id: "sub-3", status: "held" },
+        { decision_id: "sub-4", status: "held" },
+        { decision_id: "sub-5", status: "held" }
+      ]
+    }
+  }, now);
+  assert.deepEqual(validateDelegationRecord(del), [], "delegation conforms");
+  assert.deepEqual(validateOutcomeRecord(o), [], "outcome with aggregate conforms");
 });

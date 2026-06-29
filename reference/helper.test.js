@@ -6,14 +6,14 @@ const h = require("./helper");
 
 // --- decision() ---------------------------------------------------------------
 
-test("decision() builds a conforming orf_version=0.2 record", () => {
+test("decision() builds a conforming orf_version=0.3 record", () => {
   const d = h.decision("d1", {
     actor: "test-agent", intent: "do a thing",
     precondition: "state=ok", rule: "act when ok",
     action: "wrote file", falsifier: "file absent on read-back",
     confidence: 0.9, reconClass: "irrecoverable"
   });
-  assert.equal(d.orf_version, "0.2");
+  assert.equal(d.orf_version, "0.3");
   assert.equal(d.record, "decision");
   assert.equal(d.id, "d1");
   assert.equal(d.actor_agent, "test-agent");
@@ -72,7 +72,7 @@ test("reconcile() builds a conforming reconcile record", () => {
     gapDetected: false,
     resolution: "completed"
   });
-  assert.equal(r.orf_version, "0.2");
+  assert.equal(r.orf_version, "0.3");
   assert.equal(r.record, "reconcile");
   assert.equal(r.id, "r1");
   assert.equal(r.open_decision_id, "d1");
@@ -106,7 +106,7 @@ test("reconcile() supports all three resolution states", () => {
 
 test("outcome() builds a conforming outcome record", () => {
   const o = h.outcome("d1", { observedResult: "file written", falsifierObserved: false });
-  assert.equal(o.orf_version, "0.2");
+  assert.equal(o.orf_version, "0.3");
   assert.equal(o.record, "outcome");
   assert.equal(o.decision_id, "d1");
   assert.equal(o.observed_result, "file written");
@@ -134,4 +134,74 @@ test("outcome() derives status=undetermined when falsifierObserved is omitted", 
 test("outcome() has a recorded_at timestamp", () => {
   const o = h.outcome("d1", { observedResult: "x" });
   assert.ok(typeof o.recorded_at === "string" && o.recorded_at.length > 0);
+});
+
+test("outcome() includes aggregate when provided", () => {
+  const agg = { total: 3, held: 2, falsified: 0, undetermined: 1, sub_outcomes: [
+    { decision_id: "sub-a", status: "held" },
+    { decision_id: "sub-b", status: "held" },
+    { decision_id: "sub-c", status: "undetermined", notes: "network timeout" }
+  ]};
+  const o = h.outcome("d1", { observedResult: "2 of 3 held", falsifierObserved: false, aggregate: agg });
+  assert.deepEqual(o.aggregate, agg);
+});
+
+test("outcome() omits aggregate when not provided", () => {
+  const o = h.outcome("d1", { observedResult: "x", falsifierObserved: false });
+  assert.ok(!("aggregate" in o));
+});
+
+// --- delegation() (v0.3) ------------------------------------------------------
+
+test("delegation() builds a conforming delegation record", () => {
+  const d = h.delegation("del-1", {
+    delegatingAgent: "orchestrator",
+    delegateAgent: "monitor-agent",
+    delegatedIntent: "Harvest reply counts for 11 target posts",
+    delegateLedger: "orf://monitor-agent/receipts",
+    parentDecisionId: "cycle-2026-06-29"
+  });
+  assert.equal(d.orf_version, "0.3");
+  assert.equal(d.record, "delegation");
+  assert.equal(d.id, "del-1");
+  assert.equal(d.delegating_agent, "orchestrator");
+  assert.equal(d.delegate_agent, "monitor-agent");
+  assert.equal(d.delegated_intent, "Harvest reply counts for 11 target posts");
+  assert.equal(d.delegate_ledger, "orf://monitor-agent/receipts");
+  assert.equal(d.parent_decision_id, "cycle-2026-06-29");
+});
+
+test("delegation() has a recorded_at timestamp", () => {
+  const d = h.delegation("del-2", { delegatingAgent: "a", delegateAgent: "b", delegatedIntent: "do x" });
+  assert.ok(typeof d.recorded_at === "string" && d.recorded_at.length > 0);
+});
+
+test("delegation() defaults delegating_agent and delegate_agent to 'unknown' when omitted", () => {
+  const d = h.delegation("del-3", { delegatedIntent: "do x" });
+  assert.equal(d.delegating_agent, "unknown");
+  assert.equal(d.delegate_agent, "unknown");
+});
+
+test("delegation() omits optional fields when not provided", () => {
+  const d = h.delegation("del-4", { delegatingAgent: "a", delegateAgent: "b", delegatedIntent: "x" });
+  assert.ok(!("delegate_ledger" in d));
+  assert.ok(!("parent_decision_id" in d));
+  assert.ok(!("action_idempotency_key" in d));
+  assert.ok(!("falsifier" in d));
+});
+
+test("delegation() includes action_idempotency_key when provided", () => {
+  const d = h.delegation("del-5", { delegatingAgent: "a", delegateAgent: "b", delegatedIntent: "x", idempotencyKey: "invoke-monitor-2026-06-29" });
+  assert.equal(d.action_idempotency_key, "invoke-monitor-2026-06-29");
+});
+
+test("delegation() normalizes a plain-string falsifier to typed object", () => {
+  const d = h.delegation("del-6", { delegatingAgent: "a", delegateAgent: "b", delegatedIntent: "x", falsifier: "agent exits non-zero" });
+  assert.deepEqual(d.falsifier, { type: "string", value: "agent exits non-zero" });
+});
+
+test("delegation() passes a typed uri falsifier through unchanged", () => {
+  const f = { type: "uri", value: "GET orf://monitor-agent/receipts — no receipt for this cycle", window_seconds: 300 };
+  const d = h.delegation("del-7", { delegatingAgent: "a", delegateAgent: "b", delegatedIntent: "x", falsifier: f });
+  assert.deepEqual(d.falsifier, f);
 });
