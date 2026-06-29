@@ -13,9 +13,11 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 3. **What would have proved it wrong** — the *falsifier*, not the claim
 4. **Whether it can be rebuilt** — its reconstruction cost
 
-- 📄 **Spec (current):** [`spec/orf-v0.2.md`](spec/orf-v0.2.md)
-- 📄 **Spec (v0.1):** [`spec/orf-v0.1.md`](spec/orf-v0.1.md) — still valid; v0.2 is fully backward compatible
-- 🗂 **JSON Schema:** [`spec/orf-v0.2.schema.json`](spec/orf-v0.2.schema.json) — machine-readable; use with ajv, jsonschema (Python), gojsonschema, or any draft-07 validator
+- 📄 **Spec (current):** [`spec/orf-v0.3.md`](spec/orf-v0.3.md) — adds `delegation` record type, `orf://` cross-ledger URI scheme, and `aggregate` field on outcomes
+- 📄 **Spec (v0.2):** [`spec/orf-v0.2.md`](spec/orf-v0.2.md) — still valid; v0.3 is fully backward compatible
+- 📄 **Spec (v0.1):** [`spec/orf-v0.1.md`](spec/orf-v0.1.md) — still valid
+- 🗂 **JSON Schema (v0.3):** [`spec/orf-v0.3.schema.json`](spec/orf-v0.3.schema.json) — machine-readable; use with ajv, jsonschema (Python), gojsonschema, or any draft-07 validator
+- 🗂 **JSON Schema (v0.2):** [`spec/orf-v0.2.schema.json`](spec/orf-v0.2.schema.json)
 - 🔧 **Reference implementation:** [`reference/recorder.js`](reference/recorder.js) — zero dependencies, Node 22+
 - 🔧 **Drop-in helper:** [`reference/helper.js`](reference/helper.js) — compact builder API, ~60 lines, copy into any project
 - 🧪 **Conformance validators:** [`conformance/validate.js`](conformance/validate.js) — check any ORF record against the spec
@@ -107,13 +109,13 @@ const errors = validateRecord(myRecord);
 console.log(errors); // [] means conforming
 ```
 
-**From Python / Go / Ruby (or any language with a JSON Schema validator):** use [`spec/orf-v0.2.schema.json`](spec/orf-v0.2.schema.json) directly with your ecosystem's JSON Schema draft-07 validator:
+**From Python / Go / Ruby (or any language with a JSON Schema validator):** use [`spec/orf-v0.3.schema.json`](spec/orf-v0.3.schema.json) directly with your ecosystem's JSON Schema draft-07 validator:
 
 ```python
 # Python example — pip install jsonschema
 import json, jsonschema
 
-schema = json.load(open("spec/orf-v0.2.schema.json"))
+schema = json.load(open("spec/orf-v0.3.schema.json"))
 record = { ... }  # your implementation's output
 jsonschema.validate(record, schema)  # raises ValidationError if non-conforming
 ```
@@ -125,6 +127,24 @@ your own builders to self-certify.
 ```bash
 node --test conformance/orf.conformance.test.js
 ```
+
+## What's in v0.3
+
+Three additions from concrete gaps surfaced by orchestrator agents that delegate to sub-agents:
+
+- **`orf://` URI scheme** — `orf://{ledger-name}/{decision-id}` is a stable, storage-independent
+  pointer to a specific decision in a named ledger. `artifacts` strings may now use this form
+  for cross-ledger references. Bare strings remain valid.
+- **`delegation` record type** — a structured handoff receipt written by an orchestrator before
+  invoking a sub-agent. Records what the orchestrator asked (not just the tool name), who was
+  invoked, and where to find the sub-agent's own receipt chain (`delegate_ledger`). Enables
+  crash recovery: the recovering orchestrator reads `delegate_ledger` to determine whether to
+  re-invoke.
+- **`aggregate` field on `outcome`** — optional structured breakdown for multi-tool cycles.
+  Records per-sub-task statuses and counts (total / held / falsified / undetermined) as
+  machine-readable data. The top-level `status` remains the orchestrator's judgment.
+
+All v0.1 and v0.2 records are valid v0.3 records.
 
 ## What's in v0.2
 
@@ -138,11 +158,9 @@ Three additions, each from a concrete gap identified in external review:
   (don't write it twice). `action_idempotency_key` is the key for the *side effect*
   (don't perform it twice). They're different gates.
 
-All v0.1 records are valid v0.2 records.
-
 ## Status
 
-**v0.2, draft.** The spec is stable enough to implement against; breaking changes
+**v0.3, draft.** The spec is stable enough to implement against; breaking changes
 would come with a v1.0 announcement.
 
 **What would make this better — in order of usefulness:**
@@ -153,15 +171,20 @@ would come with a v1.0 announcement.
    your records, and open an issue with anything that didn't fit. That gap is where the
    standard actually lives.
 
-2. **One real `reconcile` record** from a system that actually crashed and recovered.
+2. **One real `delegation` record** from an orchestrator that actually crashed after writing
+   one. Did the `delegate_ledger` field contain enough information to determine whether to
+   re-invoke?
+
+3. **One real `reconcile` record** from a system that actually crashed and recovered.
    The reconcile spec was designed from first principles. A production crash case may
    expose missing fields in `world_state_read`.
 
-3. **Typed falsifier counter-examples** — a case where `string`, `uri`, and `predicate`
-   all miss. What type is missing?
+4. **`aggregate` with streaming sub-tasks** — the current model assumes all sub-tasks
+   complete before the orchestrator writes the outcome. If your system streams results
+   asynchronously, how does that change the pattern?
 
-4. **`action_idempotency_key` interop** — if two independent implementations use this
-   field, do they mean the same thing by it?
+5. **Typed falsifier counter-examples** — a case where `string`, `uri`, and `predicate`
+   all miss. What type is missing?
 
 ## Origin
 
