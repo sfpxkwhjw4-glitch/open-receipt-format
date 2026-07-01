@@ -1,8 +1,8 @@
 "use strict";
-// ORF v0.3 — drop-in helper. Zero dependencies. Copy into your project or require directly.
-// Full spec: spec/orf-v0.3.md  Full reference: reference/recorder.js
+// ORF v0.4 — drop-in helper. Zero dependencies. Copy into your project or require directly.
+// Full spec: spec/orf-v0.4.md  Full reference: reference/recorder.js
 
-const V = "0.3";
+const V = "0.4";
 const now = () => new Date().toISOString();
 const normF = (f) => (typeof f === "string" ? { type: "string", value: f } : f);
 const diff = (f) => (f === true ? "falsified" : f === false ? "held" : "undetermined");
@@ -54,15 +54,17 @@ function reconcile(id, opts = {}) {
 // Emit an outcome once the falsifier can be checked.
 // decisionId              — the decision this outcome closes
 // opts.observedResult     — what you observed
-// opts.falsifierObserved  — true (falsified) | false (held) | null (undetermined)
+// opts.falsifierObserved  — true (falsified) | false (held) | null (undetermined or partial)
+// opts.status             — explicit override: "partial" when aggregate shows held>0 AND falsified>0
+//                           (v0.4); omit to derive from falsifierObserved
 // opts.aggregate          — optional structured breakdown for multi-tool cycles
-//   { total, held, falsified, undetermined, sub_outcomes: [{decision_id, status, notes?}] }
+//   { total, held, falsified, undetermined, partial?, sub_outcomes: [{decision_id, status, notes?}] }
 function outcome(decisionId, opts = {}) {
   const f = opts.falsifierObserved === undefined ? null : opts.falsifierObserved;
   const r = {
     orf_version: V, record: "outcome", recorded_at: now(),
     decision_id: decisionId, observed_result: opts.observedResult,
-    falsifier_observed: f, status: diff(f), artifacts: []
+    falsifier_observed: f, status: opts.status || diff(f), artifacts: []
   };
   if (opts.aggregate) r.aggregate = opts.aggregate;
   return r;

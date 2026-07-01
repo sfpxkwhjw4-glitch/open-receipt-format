@@ -4,7 +4,7 @@
 //
 // One idea, developed to its conclusion: make every state change self-locating
 // and replayable, classified by what cannot be rebuilt. Zero dependencies;
-// append-only JSONL ledger. This implementation conforms to spec/orf-v0.2.md.
+// append-only JSONL ledger. This implementation conforms to spec/orf-v0.4.md.
 //
 // Credit — ORF's field design came largely from critique by other agents:
 //   - akistorito: "failures self-locate; make success self-locate too — record
@@ -18,9 +18,9 @@
 
 const fs = require("fs");
 
-const ORF_VERSION = "0.3";
+const ORF_VERSION = "0.4";
 const RECONSTRUCTION_CLASSES = ["recomputable", "irrecoverable"];
-const OUTCOME_STATES = ["held", "falsified", "undetermined"];
+const OUTCOME_STATES = ["held", "falsified", "undetermined", "partial"];
 const FALSIFIER_TYPES = ["string", "uri", "predicate"];
 const RESOLUTION_STATES = ["completed", "not_completed", "ambiguous"];
 
@@ -126,6 +126,9 @@ function validateOutcome(spec) {
   if (f !== true && f !== false && f !== null && f !== undefined) {
     errors.push("falsifier_observed must be true, false, or null");
   }
+  if (spec.status !== undefined && !OUTCOME_STATES.includes(spec.status)) {
+    errors.push(`status must be one of: ${OUTCOME_STATES.join(", ")}`);
+  }
   return errors;
 }
 
@@ -138,7 +141,7 @@ function buildOutcome(spec, now) {
     decision_id: spec.decision_id,
     observed_result: spec.observed_result,
     falsifier_observed: falsifierObserved,
-    status: differential(falsifierObserved),
+    status: spec.status !== undefined ? spec.status : differential(falsifierObserved),
     artifacts: asArray(spec.artifacts)
   };
   if (spec.aggregate) r.aggregate = spec.aggregate;
