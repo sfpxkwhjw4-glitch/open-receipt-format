@@ -1,8 +1,9 @@
 "use strict";
-// ORF v0.4 — drop-in helper. Zero dependencies. Copy into your project or require directly.
-// Full spec: spec/orf-v0.4.md  Full reference: reference/recorder.js
+// ORF v0.5 — drop-in helper. Zero dependencies. Copy into your project or require directly.
+// Full spec: spec/orf-v0.5.md  Full reference: reference/recorder.js
 
-const V = "0.4";
+const V = "0.5";
+const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
 const now = () => new Date().toISOString();
 const normF = (f) => (typeof f === "string" ? { type: "string", value: f } : f);
 const diff = (f) => (f === true ? "falsified" : f === false ? "held" : "undetermined");
@@ -17,8 +18,10 @@ const diff = (f) => (f === true ? "falsified" : f === false ? "held" : "undeterm
 // opts.falsifier    — string OR { type: "uri"|"predicate"|"string", value, window_seconds? }
 // opts.confidence   — 0..1
 // opts.reconClass   — "recomputable" | "irrecoverable"
-// opts.idempotencyKey — key for the side effect (separate from the receipt id)
-// opts.tags         — string[]
+// opts.idempotencyKey    — key for the side effect (separate from the receipt id)
+// opts.resolutionPolicy  — "any_falsified_is_failure" | "majority_held_is_success" | "custom"
+//                          (v0.5) declares how to interpret a partial outcome; omit for custom semantics
+// opts.tags              — string[]
 function decision(id, opts = {}) {
   const r = {
     orf_version: V, record: "decision", recorded_at: now(), id,
@@ -31,6 +34,7 @@ function decision(id, opts = {}) {
     spend: null, tags: opts.tags || []
   };
   if (opts.idempotencyKey) r.action_idempotency_key = opts.idempotencyKey;
+  if (opts.resolutionPolicy) r.resolution_policy = opts.resolutionPolicy;
   return r;
 }
 
@@ -39,16 +43,20 @@ function decision(id, opts = {}) {
 // opts.openDecisionId — the decision you are reconciling
 // opts.worldStateRead — what you actually observed in the world on waking
 // opts.gapDetected    — boolean: did the world differ from what the pre-sleep receipt promised?
-// opts.resolution     — "completed" | "not_completed" | "ambiguous"
-// opts.notes          — explanation when resolution is ambiguous
+// opts.resolution          — "completed" | "not_completed" | "ambiguous"
+// opts.notes               — explanation when resolution is ambiguous
+// opts.priorOutcomeStatus  — (v0.5) optional: "held"|"falsified"|"undetermined"|"partial"
+//                            records what was found on the prior outcome, making reconcile self-contained
 function reconcile(id, opts = {}) {
-  return {
+  const r = {
     orf_version: V, record: "reconcile", recorded_at: now(), id,
     open_decision_id: opts.openDecisionId,
     world_state_read: opts.worldStateRead,
     gap_detected: opts.gapDetected, resolution: opts.resolution,
     notes: opts.notes || ""
   };
+  if (opts.priorOutcomeStatus) r.prior_outcome_status = opts.priorOutcomeStatus;
+  return r;
 }
 
 // Emit an outcome once the falsifier can be checked.
@@ -93,4 +101,4 @@ function delegation(id, opts = {}) {
   return r;
 }
 
-module.exports = { decision, reconcile, outcome, delegation };
+module.exports = { decision, reconcile, outcome, delegation, RESOLUTION_POLICIES };

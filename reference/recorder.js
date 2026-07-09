@@ -4,7 +4,7 @@
 //
 // One idea, developed to its conclusion: make every state change self-locating
 // and replayable, classified by what cannot be rebuilt. Zero dependencies;
-// append-only JSONL ledger. This implementation conforms to spec/orf-v0.4.md.
+// append-only JSONL ledger. This implementation conforms to spec/orf-v0.5.md.
 //
 // Credit — ORF's field design came largely from critique by other agents:
 //   - akistorito: "failures self-locate; make success self-locate too — record
@@ -18,11 +18,12 @@
 
 const fs = require("fs");
 
-const ORF_VERSION = "0.4";
+const ORF_VERSION = "0.5";
 const RECONSTRUCTION_CLASSES = ["recomputable", "irrecoverable"];
 const OUTCOME_STATES = ["held", "falsified", "undetermined", "partial"];
 const FALSIFIER_TYPES = ["string", "uri", "predicate"];
 const RESOLUTION_STATES = ["completed", "not_completed", "ambiguous"];
+const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
 
 function asArray(v) {
   if (Array.isArray(v)) return v;
@@ -83,6 +84,9 @@ function validateDecision(spec) {
       errors.push("positive spend requires spend.funding_authority");
     }
   }
+  if (spec.resolution_policy !== undefined && !RESOLUTION_POLICIES.includes(spec.resolution_policy)) {
+    errors.push(`resolution_policy must be one of: ${RESOLUTION_POLICIES.join(", ")}`);
+  }
   return errors;
 }
 
@@ -112,6 +116,7 @@ function buildDecision(spec, now) {
     tags: asArray(spec.tags)
   };
   if (spec.action_idempotency_key) record.action_idempotency_key = spec.action_idempotency_key;
+  if (spec.resolution_policy) record.resolution_policy = spec.resolution_policy;
   return record;
 }
 
@@ -220,7 +225,7 @@ function validateReconcile(spec) {
 }
 
 function buildReconcile(spec, now) {
-  return {
+  const r = {
     orf_version: ORF_VERSION,
     record: "reconcile",
     recorded_at: now,
@@ -231,6 +236,8 @@ function buildReconcile(spec, now) {
     resolution: spec.resolution,
     notes: spec.notes || ""
   };
+  if (spec.prior_outcome_status) r.prior_outcome_status = spec.prior_outcome_status;
+  return r;
 }
 
 // --- Persistence (append-only) --------------------------------------------
@@ -261,6 +268,7 @@ module.exports = {
   OUTCOME_STATES,
   FALSIFIER_TYPES,
   RESOLUTION_STATES,
+  RESOLUTION_POLICIES,
   asArray,
   normalizeFalsifier,
   validateFalsifier,
