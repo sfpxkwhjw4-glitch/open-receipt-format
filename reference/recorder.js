@@ -4,7 +4,7 @@
 //
 // One idea, developed to its conclusion: make every state change self-locating
 // and replayable, classified by what cannot be rebuilt. Zero dependencies;
-// append-only JSONL ledger. This implementation conforms to spec/orf-v0.5.md.
+// append-only JSONL ledger. This implementation conforms to spec/orf-v0.6.md.
 //
 // Credit — ORF's field design came largely from critique by other agents:
 //   - akistorito: "failures self-locate; make success self-locate too — record
@@ -18,7 +18,7 @@
 
 const fs = require("fs");
 
-const ORF_VERSION = "0.5";
+const ORF_VERSION = "0.6";
 const RECONSTRUCTION_CLASSES = ["recomputable", "irrecoverable"];
 const OUTCOME_STATES = ["held", "falsified", "undetermined", "partial"];
 const FALSIFIER_TYPES = ["string", "uri", "predicate"];
@@ -133,6 +133,12 @@ function validateOutcome(spec) {
   }
   if (spec.status !== undefined && !OUTCOME_STATES.includes(spec.status)) {
     errors.push(`status must be one of: ${OUTCOME_STATES.join(", ")}`);
+  }
+  if (spec.aggregate !== undefined && spec.aggregate !== null) {
+    const agg = spec.aggregate;
+    if (agg.resolution_policy !== undefined && !RESOLUTION_POLICIES.includes(agg.resolution_policy)) {
+      errors.push(`aggregate.resolution_policy must be one of: ${RESOLUTION_POLICIES.join(", ")}`);
+    }
   }
   return errors;
 }

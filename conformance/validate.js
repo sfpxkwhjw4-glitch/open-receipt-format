@@ -1,8 +1,8 @@
 "use strict";
-// ORF v0.3 conformance validators.
+// ORF conformance validators (updated through v0.6).
 //
 // Pass any JSON record produced by your implementation.
-// An empty errors array means the record conforms to the ORF v0.3 spec.
+// An empty errors array means the record conforms to the ORF spec.
 //
 // These validators are implementation-agnostic: they check the JSON output,
 // not the builder functions that produced it. Any language can use them.
@@ -10,7 +10,8 @@
 const FALSIFIER_TYPES = ["string", "uri", "predicate"];
 const RECONSTRUCTION_CLASSES = ["recomputable", "irrecoverable"];
 const RESOLUTION_STATES = ["completed", "not_completed", "ambiguous"];
-const OUTCOME_STATUSES = ["held", "falsified", "undetermined"];
+const OUTCOME_STATUSES = ["held", "falsified", "undetermined", "partial"];
+const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
 
 function validateFalsifier(f) {
   if (f === null || f === undefined) return ["falsifier is required"];
@@ -47,6 +48,9 @@ function validateDecisionRecord(r) {
   if (!RECONSTRUCTION_CLASSES.includes(r.reconstruction_class)) {
     e.push(`reconstruction_class must be one of: ${RECONSTRUCTION_CLASSES.join(", ")}`);
   }
+  if (r.resolution_policy !== undefined && !RESOLUTION_POLICIES.includes(r.resolution_policy)) {
+    e.push(`resolution_policy must be one of: ${RESOLUTION_POLICIES.join(", ")}`);
+  }
   return e;
 }
 
@@ -72,12 +76,21 @@ function validateAggregate(agg) {
   const held = Number(agg.held);
   const falsified = Number(agg.falsified);
   const undetermined = Number(agg.undetermined);
+  const partial = Number(agg.partial || 0);
   if (!Number.isFinite(total) || !Number.isInteger(total) || total < 1) e.push("aggregate.total must be a positive integer");
   if (!Number.isFinite(held) || !Number.isInteger(held) || held < 0) e.push("aggregate.held must be a non-negative integer");
   if (!Number.isFinite(falsified) || !Number.isInteger(falsified) || falsified < 0) e.push("aggregate.falsified must be a non-negative integer");
   if (!Number.isFinite(undetermined) || !Number.isInteger(undetermined) || undetermined < 0) e.push("aggregate.undetermined must be a non-negative integer");
-  if (e.length === 0 && held + falsified + undetermined !== total) {
-    e.push("aggregate: held + falsified + undetermined must equal total");
+  if (agg.partial !== undefined) {
+    if (!Number.isFinite(partial) || !Number.isInteger(partial) || partial < 0) {
+      e.push("aggregate.partial must be a non-negative integer");
+    }
+  }
+  if (e.length === 0 && held + falsified + undetermined + partial !== total) {
+    e.push("aggregate: held + falsified + undetermined + partial must equal total");
+  }
+  if (agg.resolution_policy !== undefined && !RESOLUTION_POLICIES.includes(agg.resolution_policy)) {
+    e.push(`aggregate.resolution_policy must be one of: ${RESOLUTION_POLICIES.join(", ")}`);
   }
   if (!Array.isArray(agg.sub_outcomes)) {
     e.push("aggregate.sub_outcomes must be an array");
@@ -145,5 +158,6 @@ module.exports = {
   FALSIFIER_TYPES,
   RECONSTRUCTION_CLASSES,
   RESOLUTION_STATES,
-  OUTCOME_STATUSES
+  OUTCOME_STATUSES,
+  RESOLUTION_POLICIES
 };

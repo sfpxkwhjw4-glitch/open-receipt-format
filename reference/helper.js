@@ -1,8 +1,8 @@
 "use strict";
-// ORF v0.5 — drop-in helper. Zero dependencies. Copy into your project or require directly.
-// Full spec: spec/orf-v0.5.md  Full reference: reference/recorder.js
+// ORF v0.6 — drop-in helper. Zero dependencies. Copy into your project or require directly.
+// Full spec: spec/orf-v0.6.md  Full reference: reference/recorder.js
 
-const V = "0.5";
+const V = "0.6";
 const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
 const now = () => new Date().toISOString();
 const normF = (f) => (typeof f === "string" ? { type: "string", value: f } : f);
@@ -66,7 +66,10 @@ function reconcile(id, opts = {}) {
 // opts.status             — explicit override: "partial" when aggregate shows held>0 AND falsified>0
 //                           (v0.4); omit to derive from falsifierObserved
 // opts.aggregate          — optional structured breakdown for multi-tool cycles
-//   { total, held, falsified, undetermined, partial?, sub_outcomes: [{decision_id, status, notes?}] }
+//   { total, held, falsified, undetermined, partial?, resolution_policy?,
+//     sub_outcomes: [{decision_id, status, notes?}] }
+//   aggregate.resolution_policy  — (v0.6) "any_falsified_is_failure" | "majority_held_is_success" | "custom"
+//                                  records which policy determined outcome.status from the breakdown
 function outcome(decisionId, opts = {}) {
   const f = opts.falsifierObserved === undefined ? null : opts.falsifierObserved;
   const r = {

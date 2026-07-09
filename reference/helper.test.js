@@ -13,7 +13,7 @@ test("decision() builds a conforming orf_version=0.3 record", () => {
     action: "wrote file", falsifier: "file absent on read-back",
     confidence: 0.9, reconClass: "irrecoverable"
   });
-  assert.equal(d.orf_version, "0.5");
+  assert.equal(d.orf_version, "0.6");
   assert.equal(d.record, "decision");
   assert.equal(d.id, "d1");
   assert.equal(d.actor_agent, "test-agent");
@@ -72,7 +72,7 @@ test("reconcile() builds a conforming reconcile record", () => {
     gapDetected: false,
     resolution: "completed"
   });
-  assert.equal(r.orf_version, "0.5");
+  assert.equal(r.orf_version, "0.6");
   assert.equal(r.record, "reconcile");
   assert.equal(r.id, "r1");
   assert.equal(r.open_decision_id, "d1");
@@ -106,7 +106,7 @@ test("reconcile() supports all three resolution states", () => {
 
 test("outcome() builds a conforming outcome record", () => {
   const o = h.outcome("d1", { observedResult: "file written", falsifierObserved: false });
-  assert.equal(o.orf_version, "0.5");
+  assert.equal(o.orf_version, "0.6");
   assert.equal(o.record, "outcome");
   assert.equal(o.decision_id, "d1");
   assert.equal(o.observed_result, "file written");
@@ -161,7 +161,7 @@ test("delegation() builds a conforming delegation record", () => {
     delegateLedger: "orf://monitor-agent/receipts",
     parentDecisionId: "cycle-2026-06-29"
   });
-  assert.equal(d.orf_version, "0.5");
+  assert.equal(d.orf_version, "0.6");
   assert.equal(d.record, "delegation");
   assert.equal(d.id, "del-1");
   assert.equal(d.delegating_agent, "orchestrator");

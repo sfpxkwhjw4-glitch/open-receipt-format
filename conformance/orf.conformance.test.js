@@ -311,7 +311,7 @@ test("conformance: outcome with valid aggregate conforms", () => {
 
 test("conformance: validateAggregate rejects count invariant violation", () => {
   const e = validateAggregate({ total: 3, held: 2, falsified: 1, undetermined: 1, sub_outcomes: [] });
-  assert.ok(e.some((m) => m.includes("held + falsified + undetermined must equal total")));
+  assert.ok(e.some((m) => m.includes("must equal total")));
 });
 
 test("conformance: validateAggregate rejects non-array sub_outcomes", () => {
@@ -358,4 +358,180 @@ test("conformance: orchestrator delegation lifecycle conforms end-to-end", () =>
   }, now);
   assert.deepEqual(validateDelegationRecord(del), [], "delegation conforms");
   assert.deepEqual(validateOutcomeRecord(o), [], "outcome with aggregate conforms");
+});
+
+// ─── v0.4: partial status in sub_outcomes and aggregate ──────────────────────
+
+test("conformance: aggregate with partial sub_outcome conforms", () => {
+  const o = orf.buildOutcome({
+    decision_id: "orch-1",
+    observed_result: "3 sub-tasks: 2 held, 1 partial (sub-orch had mixed results)",
+    falsifier_observed: null,
+    status: "partial",
+    aggregate: {
+      total: 3, held: 2, falsified: 0, undetermined: 0, partial: 1,
+      sub_outcomes: [
+        { decision_id: "sub-a", status: "held" },
+        { decision_id: "sub-b", status: "held" },
+        { decision_id: "sub-c", status: "partial", notes: "sub-orchestrator had 1 held, 1 falsified" }
+      ]
+    }
+  }, new Date().toISOString());
+  assert.deepEqual(validateOutcomeRecord(o), []);
+});
+
+test("conformance: outcome with status partial conforms (v0.4+)", () => {
+  const o = orf.buildOutcome({
+    decision_id: "batch-1",
+    observed_result: "7 held, 2 falsified",
+    falsifier_observed: null,
+    status: "partial",
+    aggregate: {
+      total: 9, held: 7, falsified: 2, undetermined: 0,
+      sub_outcomes: [
+        { decision_id: "r-1", status: "held" }, { decision_id: "r-2", status: "held" },
+        { decision_id: "r-3", status: "falsified", notes: "schema error" },
+        { decision_id: "r-4", status: "held" }, { decision_id: "r-5", status: "held" },
+        { decision_id: "r-6", status: "falsified", notes: "duplicate key" },
+        { decision_id: "r-7", status: "held" }, { decision_id: "r-8", status: "held" },
+        { decision_id: "r-9", status: "held" }
+      ]
+    }
+  }, new Date().toISOString());
+  assert.deepEqual(validateOutcomeRecord(o), []);
+});
+
+test("conformance: validateAggregate rejects count invariant when partial count is wrong", () => {
+  const e = validateAggregate({
+    total: 4, held: 2, falsified: 1, undetermined: 0, partial: 0,
+    sub_outcomes: [
+      { decision_id: "a", status: "held" }, { decision_id: "b", status: "held" },
+      { decision_id: "c", status: "falsified" }
+    ]
+  });
+  assert.ok(e.some((m) => m.includes("must equal total")),
+    "invariant violation: 2+1+0+0=3 but total=4");
+});
+
+// ─── v0.5: resolution_policy on decision ─────────────────────────────────────
+
+test("conformance: decision with resolution_policy conforms (v0.5+)", () => {
+  const d = orf.buildDecision(
+    decisionSpec({ resolution_policy: "majority_held_is_success" }),
+    new Date().toISOString()
+  );
+  assert.deepEqual(validateDecisionRecord(d), []);
+  assert.equal(d.resolution_policy, "majority_held_is_success");
+});
+
+test("conformance: decision with any_falsified_is_failure policy conforms (v0.5+)", () => {
+  const d = orf.buildDecision(
+    decisionSpec({ resolution_policy: "any_falsified_is_failure" }),
+    new Date().toISOString()
+  );
+  assert.deepEqual(validateDecisionRecord(d), []);
+});
+
+test("conformance: decision with invalid resolution_policy is invalid (v0.5+)", () => {
+  const d = orf.buildDecision(decisionSpec(), new Date().toISOString());
+  d.resolution_policy = "unanimous_required";
+  const e = validateDecisionRecord(d);
+  assert.ok(e.some((m) => m.includes("resolution_policy must be one of")));
+});
+
+// ─── v0.6: resolution_policy on aggregate ────────────────────────────────────
+
+test("conformance: outcome with aggregate.resolution_policy conforms (v0.6)", () => {
+  const o = orf.buildOutcome({
+    decision_id: "batch-2026-07-09",
+    observed_result: "batch complete: 7 held, 2 falsified",
+    falsifier_observed: null,
+    status: "held",
+    aggregate: {
+      total: 9, held: 7, falsified: 2, undetermined: 0,
+      resolution_policy: "majority_held_is_success",
+      sub_outcomes: [
+        { decision_id: "r-1", status: "held" }, { decision_id: "r-2", status: "held" },
+        { decision_id: "r-3", status: "falsified", notes: "schema error" },
+        { decision_id: "r-4", status: "held" }, { decision_id: "r-5", status: "held" },
+        { decision_id: "r-6", status: "falsified", notes: "duplicate key" },
+        { decision_id: "r-7", status: "held" }, { decision_id: "r-8", status: "held" },
+        { decision_id: "r-9", status: "held" }
+      ]
+    }
+  }, new Date().toISOString());
+  assert.deepEqual(validateOutcomeRecord(o), []);
+  assert.equal(o.aggregate.resolution_policy, "majority_held_is_success");
+});
+
+test("conformance: outcome with aggregate.resolution_policy=any_falsified_is_failure conforms (v0.6)", () => {
+  const o = orf.buildOutcome({
+    decision_id: "payment-batch-1",
+    observed_result: "payment batch: 8 held, 1 failed",
+    falsifier_observed: true,
+    status: "falsified",
+    aggregate: {
+      total: 9, held: 8, falsified: 1, undetermined: 0,
+      resolution_policy: "any_falsified_is_failure",
+      sub_outcomes: [
+        { decision_id: "pay-1", status: "held" }, { decision_id: "pay-2", status: "held" },
+        { decision_id: "pay-3", status: "falsified", notes: "insufficient funds" },
+        { decision_id: "pay-4", status: "held" }, { decision_id: "pay-5", status: "held" },
+        { decision_id: "pay-6", status: "held" }, { decision_id: "pay-7", status: "held" },
+        { decision_id: "pay-8", status: "held" }, { decision_id: "pay-9", status: "held" }
+      ]
+    }
+  }, new Date().toISOString());
+  assert.deepEqual(validateOutcomeRecord(o), []);
+});
+
+test("conformance: aggregate without resolution_policy is still valid (backward compat)", () => {
+  const o = orf.buildOutcome({
+    decision_id: "legacy-batch",
+    observed_result: "3 held, 0 falsified",
+    falsifier_observed: false,
+    aggregate: {
+      total: 3, held: 3, falsified: 0, undetermined: 0,
+      sub_outcomes: [
+        { decision_id: "a", status: "held" },
+        { decision_id: "b", status: "held" },
+        { decision_id: "c", status: "held" }
+      ]
+    }
+  }, new Date().toISOString());
+  assert.deepEqual(validateOutcomeRecord(o), []);
+  assert.ok(!("resolution_policy" in o.aggregate), "absence of resolution_policy must be valid");
+});
+
+test("conformance: validateAggregate rejects invalid resolution_policy value (v0.6)", () => {
+  const e = validateAggregate({
+    total: 2, held: 1, falsified: 1, undetermined: 0,
+    resolution_policy: "unanimous_required",
+    sub_outcomes: [
+      { decision_id: "a", status: "held" },
+      { decision_id: "b", status: "falsified" }
+    ]
+  });
+  assert.ok(e.some((m) => m.includes("aggregate.resolution_policy must be one of")));
+});
+
+test("conformance: aggregate.resolution_policy=custom is valid (v0.6)", () => {
+  const e = validateAggregate({
+    total: 3, held: 2, falsified: 1, undetermined: 0,
+    resolution_policy: "custom",
+    sub_outcomes: [
+      { decision_id: "a", status: "held" },
+      { decision_id: "b", status: "held" },
+      { decision_id: "c", status: "falsified" }
+    ]
+  });
+  assert.deepEqual(e, []);
+});
+
+test("conformance: delegation does not accept resolution_policy (v0.6 normative closure)", () => {
+  const d = orf.buildDelegation({
+    id: "del-v6-1", delegating_agent: "orch", delegate_agent: "sub", delegated_intent: "x"
+  }, new Date().toISOString());
+  assert.ok(!("resolution_policy" in d),
+    "delegation records must not carry resolution_policy — it is the orchestrator's concern");
 });
