@@ -10,7 +10,8 @@
 const FALSIFIER_TYPES = ["string", "uri", "predicate"];
 const RECONSTRUCTION_CLASSES = ["recomputable", "irrecoverable"];
 const RESOLUTION_STATES = ["completed", "not_completed", "ambiguous"];
-const OUTCOME_STATUSES = ["held", "falsified", "undetermined", "partial"];
+const OUTCOME_STATUSES = ["held", "falsified", "undetermined", "partial", "in_progress"];
+const SUB_OUTCOME_STATUSES = ["held", "falsified", "undetermined", "partial"];
 const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
 
 function validateFalsifier(f) {
@@ -86,8 +87,14 @@ function validateAggregate(agg) {
       e.push("aggregate.partial must be a non-negative integer");
     }
   }
-  if (e.length === 0 && held + falsified + undetermined + partial !== total) {
-    e.push("aggregate: held + falsified + undetermined + partial must equal total");
+  const pending = Number(agg.pending || 0);
+  if (agg.pending !== undefined) {
+    if (!Number.isFinite(pending) || !Number.isInteger(pending) || pending < 0) {
+      e.push("aggregate.pending must be a non-negative integer");
+    }
+  }
+  if (e.length === 0 && held + falsified + undetermined + partial + pending !== total) {
+    e.push("aggregate: held + falsified + undetermined + partial + pending must equal total");
   }
   if (agg.resolution_policy !== undefined && !RESOLUTION_POLICIES.includes(agg.resolution_policy)) {
     e.push(`aggregate.resolution_policy must be one of: ${RESOLUTION_POLICIES.join(", ")}`);
@@ -97,8 +104,8 @@ function validateAggregate(agg) {
   } else {
     agg.sub_outcomes.forEach((so, i) => {
       if (!so.decision_id) e.push(`aggregate.sub_outcomes[${i}].decision_id is required`);
-      if (!OUTCOME_STATUSES.includes(so.status)) {
-        e.push(`aggregate.sub_outcomes[${i}].status must be one of: ${OUTCOME_STATUSES.join(", ")}`);
+      if (!SUB_OUTCOME_STATUSES.includes(so.status)) {
+        e.push(`aggregate.sub_outcomes[${i}].status must be one of: ${SUB_OUTCOME_STATUSES.join(", ")}`);
       }
     });
   }
@@ -119,6 +126,16 @@ function validateOutcomeRecord(r) {
     e.push(`status must be one of: ${OUTCOME_STATUSES.join(", ")}`);
   }
   if (r.aggregate !== undefined) e.push(...validateAggregate(r.aggregate));
+  const pending = r.aggregate ? Number(r.aggregate.pending || 0) : 0;
+  if (r.status === "in_progress") {
+    if (!r.aggregate) {
+      e.push("outcome status is in_progress but aggregate is absent — in_progress requires aggregate.pending > 0");
+    } else if (pending === 0) {
+      e.push("outcome status is in_progress but aggregate.pending is 0 or absent — in_progress requires pending > 0");
+    }
+  } else if (pending > 0) {
+    e.push(`outcome aggregate.pending is ${pending} but status is "${r.status}" — use status: "in_progress" for checkpoint records`);
+  }
   return e;
 }
 
@@ -159,5 +176,6 @@ module.exports = {
   RECONSTRUCTION_CLASSES,
   RESOLUTION_STATES,
   OUTCOME_STATUSES,
+  SUB_OUTCOME_STATUSES,
   RESOLUTION_POLICIES
 };

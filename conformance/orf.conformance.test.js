@@ -535,3 +535,202 @@ test("conformance: delegation does not accept resolution_policy (v0.6 normative 
   assert.ok(!("resolution_policy" in d),
     "delegation records must not carry resolution_policy — it is the orchestrator's concern");
 });
+
+// ─── v0.9: aggregate.pending and in_progress checkpoint pattern ───────────────
+
+test("conformance: aggregate with pending field satisfies extended invariant (v0.9)", () => {
+  const e = validateAggregate({
+    total: 3,
+    held: 1,
+    falsified: 0,
+    undetermined: 0,
+    pending: 2,
+    sub_outcomes: [{ decision_id: "sub-a", status: "held" }]
+  });
+  assert.deepEqual(e, []);
+});
+
+test("conformance: aggregate.pending + resolved counts must equal total (v0.9)", () => {
+  const e = validateAggregate({
+    total: 3,
+    held: 1,
+    falsified: 0,
+    undetermined: 0,
+    pending: 1,
+    sub_outcomes: [{ decision_id: "sub-a", status: "held" }]
+  });
+  assert.ok(e.some((m) => m.includes("must equal total")));
+});
+
+test("conformance: aggregate.pending 0 is valid (final record, no pending sub-tasks) (v0.9)", () => {
+  const e = validateAggregate({
+    total: 2,
+    held: 2,
+    falsified: 0,
+    undetermined: 0,
+    pending: 0,
+    sub_outcomes: [
+      { decision_id: "sub-a", status: "held" },
+      { decision_id: "sub-b", status: "held" }
+    ]
+  });
+  assert.deepEqual(e, []);
+});
+
+test("conformance: aggregate.pending must be non-negative integer (v0.9)", () => {
+  const e1 = validateAggregate({
+    total: 2, held: 1, falsified: 0, undetermined: 0, pending: -1,
+    sub_outcomes: [{ decision_id: "x", status: "held" }]
+  });
+  assert.ok(e1.some((m) => m.includes("pending must be a non-negative integer")));
+
+  const e2 = validateAggregate({
+    total: 2, held: 1, falsified: 0, undetermined: 0, pending: 1.5,
+    sub_outcomes: [{ decision_id: "x", status: "held" }]
+  });
+  assert.ok(e2.some((m) => m.includes("pending must be a non-negative integer")));
+});
+
+test("conformance: outcome with status in_progress and pending > 0 conforms (v0.9)", () => {
+  const now = new Date().toISOString();
+  const o = {
+    orf_version: "0.9",
+    record: "outcome",
+    recorded_at: now,
+    decision_id: "parallel-batch-1",
+    observed_result: "sub-a held; sub-b and sub-c still running",
+    falsifier_observed: null,
+    status: "in_progress",
+    aggregate: {
+      total: 3,
+      held: 1,
+      falsified: 0,
+      undetermined: 0,
+      pending: 2,
+      sub_outcomes: [{ decision_id: "sub-a", status: "held" }]
+    }
+  };
+  assert.deepEqual(validateOutcomeRecord(o), []);
+});
+
+test("conformance: outcome in_progress with no aggregate is invalid (v0.9)", () => {
+  const now = new Date().toISOString();
+  const o = {
+    orf_version: "0.9",
+    record: "outcome",
+    recorded_at: now,
+    decision_id: "parallel-batch-2",
+    observed_result: "running",
+    falsifier_observed: null,
+    status: "in_progress"
+  };
+  const e = validateOutcomeRecord(o);
+  assert.ok(e.some((m) => m.includes("in_progress") && m.includes("aggregate")));
+});
+
+test("conformance: outcome in_progress with pending 0 is invalid (v0.9)", () => {
+  const now = new Date().toISOString();
+  const o = {
+    orf_version: "0.9",
+    record: "outcome",
+    recorded_at: now,
+    decision_id: "parallel-batch-3",
+    observed_result: "all done",
+    falsifier_observed: null,
+    status: "in_progress",
+    aggregate: {
+      total: 2,
+      held: 2,
+      falsified: 0,
+      undetermined: 0,
+      pending: 0,
+      sub_outcomes: [
+        { decision_id: "sub-a", status: "held" },
+        { decision_id: "sub-b", status: "held" }
+      ]
+    }
+  };
+  const e = validateOutcomeRecord(o);
+  assert.ok(e.some((m) => m.includes("in_progress") && m.includes("pending")));
+});
+
+test("conformance: final outcome with pending > 0 is invalid (v0.9)", () => {
+  const now = new Date().toISOString();
+  const o = {
+    orf_version: "0.9",
+    record: "outcome",
+    recorded_at: now,
+    decision_id: "parallel-batch-4",
+    observed_result: "sub-a held",
+    falsifier_observed: false,
+    status: "held",
+    aggregate: {
+      total: 3,
+      held: 1,
+      falsified: 0,
+      undetermined: 0,
+      pending: 2,
+      sub_outcomes: [{ decision_id: "sub-a", status: "held" }]
+    }
+  };
+  const e = validateOutcomeRecord(o);
+  assert.ok(e.some((m) => m.includes("pending") && m.includes("in_progress")));
+});
+
+test("conformance: full checkpoint → final lifecycle conforms (v0.9)", () => {
+  const now = new Date().toISOString();
+  const checkpoint = {
+    orf_version: "0.9",
+    record: "outcome",
+    recorded_at: now,
+    decision_id: "parallel-batch-lifecycle",
+    observed_result: "sub-a held; sub-b and sub-c still running",
+    falsifier_observed: null,
+    status: "in_progress",
+    aggregate: {
+      total: 3,
+      held: 1,
+      falsified: 0,
+      undetermined: 0,
+      pending: 2,
+      resolution_policy: "any_falsified_is_failure",
+      sub_outcomes: [{ decision_id: "sub-a", status: "held" }]
+    }
+  };
+  const final = {
+    orf_version: "0.9",
+    record: "outcome",
+    recorded_at: now,
+    decision_id: "parallel-batch-lifecycle",
+    observed_result: "sub-a: held; sub-b: held; sub-c: falsified (exit code 1)",
+    falsifier_observed: true,
+    status: "falsified",
+    aggregate: {
+      total: 3,
+      held: 2,
+      falsified: 1,
+      undetermined: 0,
+      pending: 0,
+      resolution_policy: "any_falsified_is_failure",
+      sub_outcomes: [
+        { decision_id: "sub-a", status: "held" },
+        { decision_id: "sub-b", status: "held" },
+        { decision_id: "sub-c", status: "falsified", notes: "exit code 1" }
+      ]
+    }
+  };
+  assert.deepEqual(validateOutcomeRecord(checkpoint), [], "checkpoint conforms");
+  assert.deepEqual(validateOutcomeRecord(final), [], "final record conforms");
+});
+
+test("conformance: sub_outcome status does not accept in_progress (v0.9)", () => {
+  const e = validateAggregate({
+    total: 2,
+    held: 1,
+    falsified: 0,
+    undetermined: 0,
+    pending: 1,
+    sub_outcomes: [{ decision_id: "sub-a", status: "in_progress" }]
+  });
+  assert.ok(e.some((m) => m.includes("status must be one of")));
+});

@@ -13,7 +13,8 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 3. **What would have proved it wrong** — the *falsifier*, not the claim
 4. **Whether it can be rebuilt** — its reconstruction cost
 
-- 📄 **Spec (current):** [`spec/orf-v0.8.md`](spec/orf-v0.8.md) — normative treatment of `partial` sub-outcomes under each `resolution_policy`
+- 📄 **Spec (current):** [`spec/orf-v0.9.md`](spec/orf-v0.9.md) — streaming / async aggregation: `aggregate.pending` field and `in_progress` checkpoint status
+- 📄 **Spec (v0.8):** [`spec/orf-v0.8.md`](spec/orf-v0.8.md) — normative treatment of `partial` sub-outcomes under each `resolution_policy`
 - 📄 **Spec (v0.7):** [`spec/orf-v0.7.md`](spec/orf-v0.7.md) — declared vs. applied `resolution_policy`; `outcome.notes` field
 - 📄 **Spec (v0.6):** [`spec/orf-v0.6.md`](spec/orf-v0.6.md) — `aggregate.resolution_policy` (applied policy); conformance fix for `partial` in totals
 - 📄 **Spec (v0.5):** [`spec/orf-v0.5.md`](spec/orf-v0.5.md) — `resolution_policy` on `decision`; `partial` reconcile guidance
@@ -21,7 +22,8 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 - 📄 **Spec (v0.3):** [`spec/orf-v0.3.md`](spec/orf-v0.3.md) — `delegation` record type; `orf://` URI scheme; `aggregate` field
 - 📄 **Spec (v0.2):** [`spec/orf-v0.2.md`](spec/orf-v0.2.md) — typed falsifiers; reconcile-on-wake; `action_idempotency_key`
 - 📄 **Spec (v0.1):** [`spec/orf-v0.1.md`](spec/orf-v0.1.md) — still valid
-- 🗂 **JSON Schema (v0.8):** [`spec/orf-v0.8.schema.json`](spec/orf-v0.8.schema.json) — machine-readable; use with ajv, jsonschema (Python), gojsonschema, or any draft-07 validator
+- 🗂 **JSON Schema (v0.9):** [`spec/orf-v0.9.schema.json`](spec/orf-v0.9.schema.json) — machine-readable; use with ajv, jsonschema (Python), gojsonschema, or any draft-07 validator
+- 🗂 **JSON Schema (v0.8):** [`spec/orf-v0.8.schema.json`](spec/orf-v0.8.schema.json)
 - 🗂 **JSON Schema (v0.7):** [`spec/orf-v0.7.schema.json`](spec/orf-v0.7.schema.json)
 - 🗂 **JSON Schema (v0.3–v0.6):** [`spec/orf-v0.3.schema.json`](spec/orf-v0.3.schema.json) through [`spec/orf-v0.6.schema.json`](spec/orf-v0.6.schema.json)
 - 🔧 **Reference implementation:** [`reference/recorder.js`](reference/recorder.js) — zero dependencies, Node 22+
@@ -115,13 +117,13 @@ const errors = validateRecord(myRecord);
 console.log(errors); // [] means conforming
 ```
 
-**From Python / Go / Ruby (or any language with a JSON Schema validator):** use [`spec/orf-v0.8.schema.json`](spec/orf-v0.8.schema.json) directly with your ecosystem's JSON Schema draft-07 validator:
+**From Python / Go / Ruby (or any language with a JSON Schema validator):** use [`spec/orf-v0.9.schema.json`](spec/orf-v0.9.schema.json) directly with your ecosystem's JSON Schema draft-07 validator:
 
 ```python
 # Python example — pip install jsonschema
 import json, jsonschema
 
-schema = json.load(open("spec/orf-v0.8.schema.json"))
+schema = json.load(open("spec/orf-v0.9.schema.json"))
 record = { ... }  # your implementation's output
 jsonschema.validate(record, schema)  # raises ValidationError if non-conforming
 ```
@@ -166,7 +168,7 @@ Three additions, each from a concrete gap identified in external review:
 
 ## Status
 
-**v0.8, draft.** The spec is stable enough to implement against; breaking changes
+**v0.9, draft.** The spec is stable enough to implement against; breaking changes
 would come with a v1.0 announcement.
 
 **What would make this better — in order of usefulness:**
@@ -185,9 +187,9 @@ would come with a v1.0 announcement.
    The reconcile spec was designed from first principles. A production crash case may
    expose missing fields in `world_state_read`.
 
-4. **`aggregate` with streaming sub-tasks** — the current model assumes all sub-tasks
-   complete before the orchestrator writes the outcome. If your system streams results
-   asynchronously, how does that change the pattern?
+4. **`resolution_policy` counter-examples** — does the three-value enum (`any_falsified_is_failure`,
+   `majority_held_is_success`, `custom`) cover real domain policies, or do real orchestrators
+   need a fourth value?
 
 5. **Typed falsifier counter-examples** — a case where `string`, `uri`, and `predicate`
    all miss. What type is missing?
