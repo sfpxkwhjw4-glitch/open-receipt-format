@@ -1,5 +1,5 @@
 "use strict";
-// ORF conformance validators (updated through v0.6).
+// ORF conformance validators (updated through v0.7).
 //
 // Pass any JSON record produced by your implementation.
 // An empty errors array means the record conforms to the ORF spec.

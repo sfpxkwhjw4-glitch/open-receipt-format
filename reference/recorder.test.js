@@ -58,7 +58,7 @@ test("validateDecision requires a pre-spend intent receipt for spends", () => {
 
 test("buildDecision stamps orf_version and conforms to the spec shape", () => {
   const d = orf.buildDecision(decisionSpec(), "2026-06-14T07:00:00.000Z");
-  assert.equal(d.orf_version, "0.6");
+  assert.equal(d.orf_version, "0.7");
   assert.equal(d.record, "decision");
   assert.equal(d.id, "d1");
   assert.equal(d.spend, null);
@@ -92,7 +92,7 @@ test("differential maps falsifier observation to a checkable status", () => {
 
 test("buildOutcome stamps orf_version and derives status", () => {
   const o = orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: false }, "t");
-  assert.equal(o.orf_version, "0.6");
+  assert.equal(o.orf_version, "0.7");
   assert.equal(o.status, "held");
   assert.equal(orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: true }, "t").status, "falsified");
   assert.equal(orf.buildOutcome({ decision_id: "d1", observed_result: "x" }, "t").status, "undetermined");
@@ -243,7 +243,7 @@ test("validateReconcile accepts all valid resolution states", () => {
 
 test("buildReconcile stamps orf_version and record type", () => {
   const r = orf.buildReconcile(reconcileSpec(), "t");
-  assert.equal(r.orf_version, "0.6");
+  assert.equal(r.orf_version, "0.7");
   assert.equal(r.record, "reconcile");
   assert.equal(r.open_decision_id, "d1");
   assert.equal(r.gap_detected, false);
@@ -289,7 +289,7 @@ test("validateDelegation validates falsifier when present", () => {
 
 test("buildDelegation stamps orf_version and record type", () => {
   const d = orf.buildDelegation(delegationSpec(), "t");
-  assert.equal(d.orf_version, "0.6");
+  assert.equal(d.orf_version, "0.7");
   assert.equal(d.record, "delegation");
   assert.equal(d.id, "del-1");
   assert.equal(d.delegating_agent, "orchestrator");
