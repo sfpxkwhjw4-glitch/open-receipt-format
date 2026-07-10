@@ -13,11 +13,17 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 3. **What would have proved it wrong** — the *falsifier*, not the claim
 4. **Whether it can be rebuilt** — its reconstruction cost
 
-- 📄 **Spec (current):** [`spec/orf-v0.3.md`](spec/orf-v0.3.md) — adds `delegation` record type, `orf://` cross-ledger URI scheme, and `aggregate` field on outcomes
-- 📄 **Spec (v0.2):** [`spec/orf-v0.2.md`](spec/orf-v0.2.md) — still valid; v0.3 is fully backward compatible
+- 📄 **Spec (current):** [`spec/orf-v0.8.md`](spec/orf-v0.8.md) — normative treatment of `partial` sub-outcomes under each `resolution_policy`
+- 📄 **Spec (v0.7):** [`spec/orf-v0.7.md`](spec/orf-v0.7.md) — declared vs. applied `resolution_policy`; `outcome.notes` field
+- 📄 **Spec (v0.6):** [`spec/orf-v0.6.md`](spec/orf-v0.6.md) — `aggregate.resolution_policy` (applied policy); conformance fix for `partial` in totals
+- 📄 **Spec (v0.5):** [`spec/orf-v0.5.md`](spec/orf-v0.5.md) — `resolution_policy` on `decision`; `partial` reconcile guidance
+- 📄 **Spec (v0.4):** [`spec/orf-v0.4.md`](spec/orf-v0.4.md) — `partial` outcome status; `aggregate.partial` count
+- 📄 **Spec (v0.3):** [`spec/orf-v0.3.md`](spec/orf-v0.3.md) — `delegation` record type; `orf://` URI scheme; `aggregate` field
+- 📄 **Spec (v0.2):** [`spec/orf-v0.2.md`](spec/orf-v0.2.md) — typed falsifiers; reconcile-on-wake; `action_idempotency_key`
 - 📄 **Spec (v0.1):** [`spec/orf-v0.1.md`](spec/orf-v0.1.md) — still valid
-- 🗂 **JSON Schema (v0.3):** [`spec/orf-v0.3.schema.json`](spec/orf-v0.3.schema.json) — machine-readable; use with ajv, jsonschema (Python), gojsonschema, or any draft-07 validator
-- 🗂 **JSON Schema (v0.2):** [`spec/orf-v0.2.schema.json`](spec/orf-v0.2.schema.json)
+- 🗂 **JSON Schema (v0.8):** [`spec/orf-v0.8.schema.json`](spec/orf-v0.8.schema.json) — machine-readable; use with ajv, jsonschema (Python), gojsonschema, or any draft-07 validator
+- 🗂 **JSON Schema (v0.7):** [`spec/orf-v0.7.schema.json`](spec/orf-v0.7.schema.json)
+- 🗂 **JSON Schema (v0.3–v0.6):** [`spec/orf-v0.3.schema.json`](spec/orf-v0.3.schema.json) through [`spec/orf-v0.6.schema.json`](spec/orf-v0.6.schema.json)
 - 🔧 **Reference implementation:** [`reference/recorder.js`](reference/recorder.js) — zero dependencies, Node 22+
 - 🔧 **Drop-in helper:** [`reference/helper.js`](reference/helper.js) — compact builder API, ~60 lines, copy into any project
 - 🧪 **Conformance validators:** [`conformance/validate.js`](conformance/validate.js) — check any ORF record against the spec
@@ -109,13 +115,13 @@ const errors = validateRecord(myRecord);
 console.log(errors); // [] means conforming
 ```
 
-**From Python / Go / Ruby (or any language with a JSON Schema validator):** use [`spec/orf-v0.3.schema.json`](spec/orf-v0.3.schema.json) directly with your ecosystem's JSON Schema draft-07 validator:
+**From Python / Go / Ruby (or any language with a JSON Schema validator):** use [`spec/orf-v0.8.schema.json`](spec/orf-v0.8.schema.json) directly with your ecosystem's JSON Schema draft-07 validator:
 
 ```python
 # Python example — pip install jsonschema
 import json, jsonschema
 
-schema = json.load(open("spec/orf-v0.3.schema.json"))
+schema = json.load(open("spec/orf-v0.8.schema.json"))
 record = { ... }  # your implementation's output
 jsonschema.validate(record, schema)  # raises ValidationError if non-conforming
 ```
@@ -160,7 +166,7 @@ Three additions, each from a concrete gap identified in external review:
 
 ## Status
 
-**v0.3, draft.** The spec is stable enough to implement against; breaking changes
+**v0.8, draft.** The spec is stable enough to implement against; breaking changes
 would come with a v1.0 announcement.
 
 **What would make this better — in order of usefulness:**
