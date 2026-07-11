@@ -29,7 +29,7 @@ ORF names four things every such receipt needs, fixes their types, and stops:
 - 🔧 **Reference implementation:** [`reference/recorder.js`](reference/recorder.js) — zero dependencies, Node 22+
 - 🔧 **Drop-in helper:** [`reference/helper.js`](reference/helper.js) — compact builder API, ~60 lines, copy into any project
 - 🧪 **Conformance validators:** [`conformance/validate.js`](conformance/validate.js) — check any ORF record against the spec
-- 💡 **Examples:** [`examples/file-agent.js`](examples/file-agent.js), [`examples/http-agent.js`](examples/http-agent.js), [`examples/queue-agent.js`](examples/queue-agent.js)
+- 💡 **Examples:** [`examples/file-agent.js`](examples/file-agent.js), [`examples/http-agent.js`](examples/http-agent.js), [`examples/queue-agent.js`](examples/queue-agent.js), [`examples/async-batch-agent.js`](examples/async-batch-agent.js)
 - 📖 **Boundary-type reference:** [`reference/boundary-types.md`](reference/boundary-types.md) — what `world_state_read` looks like for file, HTTP, DB, queue, and deploy actions
 - 🔗 **Orchestrator patterns:** [`reference/orchestrator-patterns.md`](reference/orchestrator-patterns.md) — how to write receipts when your agent delegates to sub-agents or tools
 - 🔗 **Cross-ledger references:** [`reference/cross-ledger.md`](reference/cross-ledger.md) — the `orf://ledger-name/decision-id` URI scheme for artifact references across agent ledgers
@@ -104,6 +104,10 @@ Three worked examples showing how `world_state_read` differs by action type:
 - **[`examples/queue-agent.js`](examples/queue-agent.js)** — message-queue agent. Shows the `ambiguous` resolution case: a message that was enqueued may have been consumed before reboot, so absence doesn't mean "not sent." Run with `node examples/queue-agent.js [completed|not_completed|ambiguous]`.
 
 All three examples show the boot-time reconcile pattern (crash gap closure). For the full taxonomy of `world_state_read` values by boundary type, see **[`reference/boundary-types.md`](reference/boundary-types.md)**.
+
+One additional example shows the v0.9 checkpoint pattern:
+
+- **[`examples/async-batch-agent.js`](examples/async-batch-agent.js)** — async batch orchestrator. Dispatches N sub-agents in parallel, writes `in_progress` checkpoint outcomes as results arrive, and writes a final aggregate once all are resolved. Demonstrates `aggregate.pending`, the extended total invariant, and crash-recovery visibility. Run with `node examples/async-batch-agent.js [all_held|one_falsified]`.
 
 ## Self-certify your implementation
 
