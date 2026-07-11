@@ -58,7 +58,7 @@ test("validateDecision requires a pre-spend intent receipt for spends", () => {
 
 test("buildDecision stamps orf_version and conforms to the spec shape", () => {
   const d = orf.buildDecision(decisionSpec(), "2026-06-14T07:00:00.000Z");
-  assert.equal(d.orf_version, "0.7");
+  assert.equal(d.orf_version, "0.9");
   assert.equal(d.record, "decision");
   assert.equal(d.id, "d1");
   assert.equal(d.spend, null);
@@ -92,7 +92,7 @@ test("differential maps falsifier observation to a checkable status", () => {
 
 test("buildOutcome stamps orf_version and derives status", () => {
   const o = orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: false }, "t");
-  assert.equal(o.orf_version, "0.7");
+  assert.equal(o.orf_version, "0.9");
   assert.equal(o.status, "held");
   assert.equal(orf.buildOutcome({ decision_id: "d1", observed_result: "x", falsifier_observed: true }, "t").status, "falsified");
   assert.equal(orf.buildOutcome({ decision_id: "d1", observed_result: "x" }, "t").status, "undetermined");
@@ -243,7 +243,7 @@ test("validateReconcile accepts all valid resolution states", () => {
 
 test("buildReconcile stamps orf_version and record type", () => {
   const r = orf.buildReconcile(reconcileSpec(), "t");
-  assert.equal(r.orf_version, "0.7");
+  assert.equal(r.orf_version, "0.9");
   assert.equal(r.record, "reconcile");
   assert.equal(r.open_decision_id, "d1");
   assert.equal(r.gap_detected, false);
@@ -289,7 +289,7 @@ test("validateDelegation validates falsifier when present", () => {
 
 test("buildDelegation stamps orf_version and record type", () => {
   const d = orf.buildDelegation(delegationSpec(), "t");
-  assert.equal(d.orf_version, "0.7");
+  assert.equal(d.orf_version, "0.9");
   assert.equal(d.record, "delegation");
   assert.equal(d.id, "del-1");
   assert.equal(d.delegating_agent, "orchestrator");
@@ -350,4 +350,69 @@ test("ledger round-trips a decision + outcome + reconcile triple", () => {
   } finally {
     fs.rmSync(file, { force: true });
   }
+});
+
+// --- v0.7: outcome.notes field -----------------------------------------------
+
+test("buildOutcome passes through notes when provided", () => {
+  const o = orf.buildOutcome({ decision_id: "d1", observed_result: "x", notes: "policy diverged — declared any_falsified_is_failure, aggregator used majority_held_is_success" }, "t");
+  assert.equal(o.notes, "policy diverged — declared any_falsified_is_failure, aggregator used majority_held_is_success");
+});
+
+test("buildOutcome omits notes when not provided", () => {
+  const o = orf.buildOutcome({ decision_id: "d1", observed_result: "x" }, "t");
+  assert.ok(!("notes" in o));
+});
+
+// --- v0.9: in_progress status and aggregate.pending --------------------------
+
+test("OUTCOME_STATES includes in_progress", () => {
+  assert.ok(orf.OUTCOME_STATES.includes("in_progress"));
+});
+
+test("validateOutcome accepts in_progress with aggregate.pending > 0", () => {
+  const e = orf.validateOutcome({
+    decision_id: "d1", observed_result: "5 of 10 done",
+    status: "in_progress",
+    aggregate: { total: 10, held: 3, falsified: 0, undetermined: 2, partial: 0, pending: 5, sub_outcomes: [] }
+  });
+  assert.deepEqual(e, []);
+});
+
+test("validateOutcome rejects in_progress without aggregate", () => {
+  const e = orf.validateOutcome({ decision_id: "d1", observed_result: "x", status: "in_progress" });
+  assert.ok(e.some((m) => m.includes("in_progress") && m.includes("aggregate is absent")));
+});
+
+test("validateOutcome rejects in_progress when aggregate.pending is 0", () => {
+  const e = orf.validateOutcome({
+    decision_id: "d1", observed_result: "x",
+    status: "in_progress",
+    aggregate: { total: 5, held: 5, falsified: 0, undetermined: 0, pending: 0, sub_outcomes: [] }
+  });
+  assert.ok(e.some((m) => m.includes("in_progress") && m.includes("pending")));
+});
+
+test("validateOutcome rejects aggregate.pending > 0 without in_progress status", () => {
+  const e = orf.validateOutcome({
+    decision_id: "d1", observed_result: "x",
+    status: "held",
+    aggregate: { total: 10, held: 7, falsified: 0, undetermined: 0, partial: 0, pending: 3, sub_outcomes: [] }
+  });
+  assert.ok(e.some((m) => m.includes("pending") && m.includes("in_progress")));
+});
+
+test("validateOutcome rejects aggregate.pending that is not a non-negative integer", () => {
+  const e = orf.validateOutcome({
+    decision_id: "d1", observed_result: "x",
+    aggregate: { total: 5, held: 4, falsified: 0, undetermined: 0, pending: -1, sub_outcomes: [] }
+  });
+  assert.ok(e.some((m) => m.includes("aggregate.pending must be a non-negative integer")));
+});
+
+test("buildOutcome accepts in_progress with aggregate containing pending", () => {
+  const agg = { total: 10, held: 3, falsified: 0, undetermined: 2, partial: 0, pending: 5, sub_outcomes: [] };
+  const o = orf.buildOutcome({ decision_id: "d1", observed_result: "checkpoint", status: "in_progress", aggregate: agg }, "t");
+  assert.equal(o.status, "in_progress");
+  assert.deepEqual(o.aggregate, agg);
 });

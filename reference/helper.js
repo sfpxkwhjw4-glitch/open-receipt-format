@@ -1,8 +1,8 @@
 "use strict";
-// ORF v0.6 — drop-in helper. Zero dependencies. Copy into your project or require directly.
-// Full spec: spec/orf-v0.6.md  Full reference: reference/recorder.js
+// ORF v0.9 — drop-in helper. Zero dependencies. Copy into your project or require directly.
+// Full spec: spec/orf-v0.9.md  Full reference: reference/recorder.js
 
-const V = "0.6";
+const V = "0.9";
 const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
 const now = () => new Date().toISOString();
 const normF = (f) => (typeof f === "string" ? { type: "string", value: f } : f);
@@ -45,7 +45,7 @@ function decision(id, opts = {}) {
 // opts.gapDetected    — boolean: did the world differ from what the pre-sleep receipt promised?
 // opts.resolution          — "completed" | "not_completed" | "ambiguous"
 // opts.notes               — explanation when resolution is ambiguous
-// opts.priorOutcomeStatus  — (v0.5) optional: "held"|"falsified"|"undetermined"|"partial"
+// opts.priorOutcomeStatus  — (v0.5) optional: "held"|"falsified"|"undetermined"|"partial"|"in_progress"
 //                            records what was found on the prior outcome, making reconcile self-contained
 function reconcile(id, opts = {}) {
   const r = {
@@ -64,10 +64,14 @@ function reconcile(id, opts = {}) {
 // opts.observedResult     — what you observed
 // opts.falsifierObserved  — true (falsified) | false (held) | null (undetermined or partial)
 // opts.status             — explicit override: "partial" when aggregate shows held>0 AND falsified>0
-//                           (v0.4); omit to derive from falsifierObserved
+//                           (v0.4); "in_progress" (v0.9) for checkpoint records when pending > 0;
+//                           omit to derive from falsifierObserved
+// opts.notes              — (v0.7) optional string; SHOULD document policy divergence or partial treatment
 // opts.aggregate          — optional structured breakdown for multi-tool cycles
-//   { total, held, falsified, undetermined, partial?, resolution_policy?,
+//   { total, held, falsified, undetermined, partial?, pending?, resolution_policy?,
 //     sub_outcomes: [{decision_id, status, notes?}] }
+//   aggregate.pending        — (v0.9) sub-tasks dispatched but not yet resolved;
+//                              extends total invariant: held+falsified+undetermined+partial+pending==total
 //   aggregate.resolution_policy  — (v0.6) "any_falsified_is_failure" | "majority_held_is_success" | "custom"
 //                                  records which policy determined outcome.status from the breakdown
 function outcome(decisionId, opts = {}) {
@@ -77,6 +81,7 @@ function outcome(decisionId, opts = {}) {
     decision_id: decisionId, observed_result: opts.observedResult,
     falsifier_observed: f, status: opts.status || diff(f), artifacts: []
   };
+  if (opts.notes) r.notes = opts.notes;
   if (opts.aggregate) r.aggregate = opts.aggregate;
   return r;
 }

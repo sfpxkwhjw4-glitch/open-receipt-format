@@ -6,14 +6,14 @@ const h = require("./helper");
 
 // --- decision() ---------------------------------------------------------------
 
-test("decision() builds a conforming orf_version=0.3 record", () => {
+test("decision() builds a conforming orf_version record", () => {
   const d = h.decision("d1", {
     actor: "test-agent", intent: "do a thing",
     precondition: "state=ok", rule: "act when ok",
     action: "wrote file", falsifier: "file absent on read-back",
     confidence: 0.9, reconClass: "irrecoverable"
   });
-  assert.equal(d.orf_version, "0.6");
+  assert.equal(d.orf_version, "0.9");
   assert.equal(d.record, "decision");
   assert.equal(d.id, "d1");
   assert.equal(d.actor_agent, "test-agent");
@@ -72,7 +72,7 @@ test("reconcile() builds a conforming reconcile record", () => {
     gapDetected: false,
     resolution: "completed"
   });
-  assert.equal(r.orf_version, "0.6");
+  assert.equal(r.orf_version, "0.9");
   assert.equal(r.record, "reconcile");
   assert.equal(r.id, "r1");
   assert.equal(r.open_decision_id, "d1");
@@ -106,7 +106,7 @@ test("reconcile() supports all three resolution states", () => {
 
 test("outcome() builds a conforming outcome record", () => {
   const o = h.outcome("d1", { observedResult: "file written", falsifierObserved: false });
-  assert.equal(o.orf_version, "0.6");
+  assert.equal(o.orf_version, "0.9");
   assert.equal(o.record, "outcome");
   assert.equal(o.decision_id, "d1");
   assert.equal(o.observed_result, "file written");
@@ -161,7 +161,7 @@ test("delegation() builds a conforming delegation record", () => {
     delegateLedger: "orf://monitor-agent/receipts",
     parentDecisionId: "cycle-2026-06-29"
   });
-  assert.equal(d.orf_version, "0.6");
+  assert.equal(d.orf_version, "0.9");
   assert.equal(d.record, "delegation");
   assert.equal(d.id, "del-1");
   assert.equal(d.delegating_agent, "orchestrator");
@@ -204,4 +204,34 @@ test("delegation() passes a typed uri falsifier through unchanged", () => {
   const f = { type: "uri", value: "GET orf://monitor-agent/receipts — no receipt for this cycle", window_seconds: 300 };
   const d = h.delegation("del-7", { delegatingAgent: "a", delegateAgent: "b", delegatedIntent: "x", falsifier: f });
   assert.deepEqual(d.falsifier, f);
+});
+
+// --- v0.7: outcome.notes ------------------------------------------------------
+
+test("outcome() passes through notes when provided", () => {
+  const o = h.outcome("d1", { observedResult: "x", notes: "applied majority_held_is_success; partial excluded from count" });
+  assert.equal(o.notes, "applied majority_held_is_success; partial excluded from count");
+});
+
+test("outcome() omits notes when not provided", () => {
+  const o = h.outcome("d1", { observedResult: "x" });
+  assert.ok(!("notes" in o));
+});
+
+// --- v0.9: in_progress status and aggregate.pending --------------------------
+
+test("outcome() accepts in_progress status with aggregate containing pending", () => {
+  const agg = { total: 8, held: 2, falsified: 0, undetermined: 1, partial: 0, pending: 5, sub_outcomes: [] };
+  const o = h.outcome("d1", { observedResult: "checkpoint after 3", status: "in_progress", aggregate: agg });
+  assert.equal(o.status, "in_progress");
+  assert.deepEqual(o.aggregate, agg);
+});
+
+test("reconcile() accepts in_progress as priorOutcomeStatus", () => {
+  const r = h.reconcile("r-ip", {
+    openDecisionId: "d1", worldStateRead: "batch still running",
+    gapDetected: false, resolution: "not_completed",
+    priorOutcomeStatus: "in_progress"
+  });
+  assert.equal(r.prior_outcome_status, "in_progress");
 });

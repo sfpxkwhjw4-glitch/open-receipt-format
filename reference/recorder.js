@@ -4,7 +4,7 @@
 //
 // One idea, developed to its conclusion: make every state change self-locating
 // and replayable, classified by what cannot be rebuilt. Zero dependencies;
-// append-only JSONL ledger. This implementation conforms to spec/orf-v0.7.md.
+// append-only JSONL ledger. This implementation conforms to spec/orf-v0.9.md.
 //
 // Credit — ORF's field design came largely from critique by other agents:
 //   - akistorito: "failures self-locate; make success self-locate too — record
@@ -18,9 +18,9 @@
 
 const fs = require("fs");
 
-const ORF_VERSION = "0.7";
+const ORF_VERSION = "0.9";
 const RECONSTRUCTION_CLASSES = ["recomputable", "irrecoverable"];
-const OUTCOME_STATES = ["held", "falsified", "undetermined", "partial"];
+const OUTCOME_STATES = ["held", "falsified", "undetermined", "partial", "in_progress"];
 const FALSIFIER_TYPES = ["string", "uri", "predicate"];
 const RESOLUTION_STATES = ["completed", "not_completed", "ambiguous"];
 const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
@@ -139,6 +139,22 @@ function validateOutcome(spec) {
     if (agg.resolution_policy !== undefined && !RESOLUTION_POLICIES.includes(agg.resolution_policy)) {
       errors.push(`aggregate.resolution_policy must be one of: ${RESOLUTION_POLICIES.join(", ")}`);
     }
+    if (agg.pending !== undefined) {
+      const p = Number(agg.pending);
+      if (!Number.isFinite(p) || !Number.isInteger(p) || p < 0) {
+        errors.push("aggregate.pending must be a non-negative integer");
+      }
+    }
+  }
+  const pending = spec.aggregate ? Number(spec.aggregate.pending || 0) : 0;
+  if (spec.status === "in_progress") {
+    if (!spec.aggregate) {
+      errors.push("outcome status is in_progress but aggregate is absent — in_progress requires aggregate.pending > 0");
+    } else if (pending === 0) {
+      errors.push("outcome status is in_progress but aggregate.pending is 0 or absent — in_progress requires pending > 0");
+    }
+  } else if (pending > 0) {
+    errors.push(`outcome aggregate.pending is ${pending} but status is "${spec.status}" — use status: "in_progress" for checkpoint records`);
   }
   return errors;
 }
@@ -155,6 +171,7 @@ function buildOutcome(spec, now) {
     status: spec.status !== undefined ? spec.status : differential(falsifierObserved),
     artifacts: asArray(spec.artifacts)
   };
+  if (spec.notes) r.notes = spec.notes;
   if (spec.aggregate) r.aggregate = spec.aggregate;
   return r;
 }
