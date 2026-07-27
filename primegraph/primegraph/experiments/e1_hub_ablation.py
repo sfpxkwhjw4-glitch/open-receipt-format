@@ -47,12 +47,16 @@ WEIGHTINGS = ["padic", "uniform", "log"]
 def run_one(cfg: dict) -> dict:
     exact_max_n = cfg.pop("exact_max_n")
     do_betweenness = cfg.pop("betweenness", True)
+    sampled_k = cfg.pop("sampled_k", None)
+    replicates = cfg.pop("replicates", None)
     g = build_graph(**cfg)
     vals = spectral_metrics(g)
 
     bt = None
     if do_betweenness:
-        bt = betweenness_for(g, exact_max_n=exact_max_n)
+        bt = betweenness_for(
+            g, exact_max_n=exact_max_n, k=sampled_k, replicates=replicates
+        )
         vals["betweenness"] = bt.values
 
     df = node_frame(g, vals)
@@ -119,6 +123,10 @@ def main(argv=None) -> int:
     ap.add_argument("--spectral-only-above", type=int, default=100000,
                     help="skip betweenness above this N (it is the cost driver)")
     ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument("--sampled-k", type=int, default=None,
+                    help="pivot count above --exact-max-n (default: per-N table)")
+    ap.add_argument("--replicates", type=int, default=None,
+                    help="independent pivot samples, used for the betweenness CI")
     args = ap.parse_args(argv)
 
     ensure_dirs()
@@ -135,6 +143,8 @@ def main(argv=None) -> int:
                         weighting=w,
                         exact_max_n=args.exact_max_n,
                         betweenness=N <= args.spectral_only_above,
+                        sampled_k=args.sampled_k,
+                        replicates=args.replicates,
                     )
                 )
 

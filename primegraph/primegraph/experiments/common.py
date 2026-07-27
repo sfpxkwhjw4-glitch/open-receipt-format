@@ -54,12 +54,23 @@ def spectral_metrics(g: PrimeGraph) -> dict[str, np.ndarray]:
     }
 
 
-def betweenness_for(g: PrimeGraph, exact_max_n: int, seed: int = 0):
+def betweenness_for(
+    g: PrimeGraph,
+    exact_max_n: int,
+    seed: int = 0,
+    k: int | None = None,
+    replicates: int | None = None,
+):
     if g.N <= exact_max_n:
         return M.betweenness(g, weight="cost", exact_max_n=exact_max_n)
-    k = SAMPLED_K.get(g.N, max(50, min(400, 2_000_000 // g.N)))
+    k = k or SAMPLED_K.get(g.N, max(50, min(400, 2_000_000 // g.N)))
     return M.betweenness(
-        g, weight="cost", k=k, replicates=SAMPLED_REPLICATES, seed=seed, exact_max_n=exact_max_n
+        g,
+        weight="cost",
+        k=k,
+        replicates=replicates or SAMPLED_REPLICATES,
+        seed=seed,
+        exact_max_n=exact_max_n,
     )
 
 

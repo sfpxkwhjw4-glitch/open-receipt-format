@@ -32,7 +32,14 @@ from .common import FIGURES, ensure_dirs, n_workers, spectral_metrics, write_tab
 
 DEFAULT_NS = [1000, 10000]
 WEIGHTINGS = ["padic", "uniform", "log"]
+
+# `degree` is a construction check, not a result: the null preserves degree
+# exactly, so every z must come back 0. `degree_weighted` is likewise
+# uninformative on the prime side, because each edge carries its cost with it
+# through a swap and only the non-prime endpoint moves. Both are computed and
+# stored, but neither is evidence for or against the claims.
 METRICS = ["degree", "eigenvector", "eigenvector_costweight", "pagerank", "betweenness"]
+CONSTRUCTION_CHECKS = {"degree", "degree_weighted"}
 
 
 def _metrics_for(g, sources: np.ndarray | None) -> dict[str, np.ndarray]:
@@ -186,9 +193,13 @@ def print_verdict(detail: pd.DataFrame) -> None:
     finite = detail.replace([np.inf, -np.inf], np.nan)
     for metric, grp in finite.groupby("metric"):
         frac = (grp["z"].abs() < 2).mean()
+        tag = "  [construction check]" if metric in CONSTRUCTION_CHECKS else ""
         print(f"  {metric:<24} fraction of top nodes with |z| < 2: {frac:.2f} "
               f"(median |z| = {grp['z'].abs().median():.2f}, "
-              f"max |z| = {grp['z'].abs().max():.2f})")
+              f"max |z| = {grp['z'].abs().max():.2f}){tag}")
+    check = finite[finite.metric == "degree"]
+    if len(check) and check["z"].abs().max() > 1e-9:
+        print("  WARNING: degree z != 0 -- the null is not degree-preserving.")
 
 
 if __name__ == "__main__":
