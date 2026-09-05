@@ -1,5 +1,5 @@
 "use strict";
-// ORF conformance validators (updated through v0.8).
+// ORF conformance validators (updated through v0.10).
 //
 // Pass any JSON record produced by your implementation.
 // An empty errors array means the record conforms to the ORF spec.
@@ -13,6 +13,12 @@ const RESOLUTION_STATES = ["completed", "not_completed", "ambiguous"];
 const OUTCOME_STATUSES = ["held", "falsified", "undetermined", "partial", "in_progress"];
 const SUB_OUTCOME_STATUSES = ["held", "falsified", "undetermined", "partial"];
 const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
+const CUSTODY_REASONS = [
+  "seat_claimed", "budget_low", "budget_exhausted", "voluntary",
+  "unresponsive", "preempted_by_user", "council_exhausted"
+];
+const MEMBER_ROLES = ["coordinator", "hand", "observer"];
+const MEMBER_STATES = ["available", "exhausted", "unreachable", "onboarding"];
 
 function validateFalsifier(f) {
   if (f === null || f === undefined) return ["falsifier is required"];
@@ -152,6 +158,122 @@ function validateDelegationRecord(r) {
   return e;
 }
 
+
+// --- custody (v0.10) --------------------------------------------------------
+//
+// The seat invariants live here rather than in the JSON Schema because three of
+// the four are conditional: they relate from_agent, to_agent, reason, and
+// resume_at to each other. A schema can say "these fields exist"; only a
+// validator can say "a seat held by nobody must say when it ends."
+
+function validateCustodyRecord(r) {
+  if (!r || r.record !== "custody") return ['record field must equal "custody"'];
+  const e = [];
+  if (!r.orf_version) e.push("orf_version is required");
+  if (!r.recorded_at) e.push("recorded_at is required (ISO 8601 timestamp)");
+  if (!r.id) e.push("id is required");
+  if (!r.council) e.push("council is required (it scopes seat_epoch)");
+  if (!Number.isInteger(r.seat_epoch) || r.seat_epoch < 0) {
+    e.push("seat_epoch must be a non-negative integer");
+  }
+  if (r.from_agent === undefined) e.push("from_agent is required (null when claiming an empty seat)");
+  if (r.to_agent === undefined) e.push("to_agent is required (null to record council dormancy)");
+  if (!CUSTODY_REASONS.includes(r.reason)) {
+    e.push(`reason must be one of: ${CUSTODY_REASONS.join(", ")}`);
+  }
+
+  // Invariant 3: epoch 0 is a claim, not a transfer.
+  if (r.from_agent === null && r.seat_epoch !== 0 && r.reason !== "seat_claimed") {
+    e.push('from_agent may be null only at seat_epoch 0, or with reason "seat_claimed" after dormancy');
+  }
+  // Invariant 2: the seat always moves.
+  if (r.to_agent && r.from_agent && r.to_agent === r.from_agent) {
+    e.push("to_agent must differ from from_agent — a custody record that does not move the seat is invalid");
+  }
+  // Invariant 4: dormancy is a seat held by nobody, and it must say when it ends.
+  if (r.to_agent === null) {
+    if (r.reason !== "council_exhausted") {
+      e.push('to_agent is null but reason is not "council_exhausted"');
+    }
+    if (!r.resume_at) {
+      e.push("to_agent is null but resume_at is absent — a dormancy record must say when work can resume");
+    }
+  }
+
+  if (r.budget !== undefined && r.budget !== null) {
+    if (typeof r.budget !== "object") e.push("budget must be an object");
+    else {
+      const rf = r.budget.remaining_fraction;
+      if (rf !== undefined && (!Number.isFinite(Number(rf)) || Number(rf) < 0 || Number(rf) > 1)) {
+        e.push("budget.remaining_fraction must be a number between 0 and 1");
+      }
+      const ws = r.budget.window_seconds;
+      if (ws !== undefined && (!Number.isFinite(Number(ws)) || Number(ws) <= 0)) {
+        e.push("budget.window_seconds must be a positive number");
+      }
+    }
+  }
+  if (r.roster !== undefined) {
+    if (!Array.isArray(r.roster)) e.push("roster must be an array");
+    else {
+      r.roster.forEach((m, i) => {
+        if (!m || !m.agent) e.push(`roster[${i}].agent is required`);
+        if (m && m.role !== undefined && !MEMBER_ROLES.includes(m.role)) {
+          e.push(`roster[${i}].role must be one of: ${MEMBER_ROLES.join(", ")}`);
+        }
+        if (m && m.status !== undefined && !MEMBER_STATES.includes(m.status)) {
+          e.push(`roster[${i}].status must be one of: ${MEMBER_STATES.join(", ")}`);
+        }
+      });
+    }
+  }
+  if (r.open_decisions !== undefined) {
+    if (!Array.isArray(r.open_decisions)) e.push("open_decisions must be an array");
+    else r.open_decisions.forEach((d, i) => {
+      if (typeof d !== "string" || !d) e.push(`open_decisions[${i}] must be a non-empty string`);
+    });
+  }
+  if (r.falsifier !== undefined) e.push(...validateFalsifier(r.falsifier));
+
+  // resume_at, when present alongside a roster, must be the earliest reset among
+  // exhausted members: the first moment work CAN resume, not a guess about when
+  // it should.
+  if (r.resume_at && Array.isArray(r.roster)) {
+    const resets = r.roster
+      .filter((m) => m && m.status === "exhausted" && m.resets_at)
+      .map((m) => m.resets_at)
+      .sort();
+    if (resets.length > 0 && r.resume_at !== resets[0]) {
+      e.push(`resume_at (${r.resume_at}) must equal the earliest resets_at among exhausted roster members (${resets[0]})`);
+    }
+  }
+  return e;
+}
+
+// Ledger-level check for invariant 1 (one seat). Pass the whole ledger; a single
+// record cannot prove it. Returns the list of violations.
+function validateCustodyChain(records, council) {
+  const chain = records
+    .filter((r) => r && r.record === "custody" && (council === undefined || r.council === council))
+    .slice()
+    .sort((a, b) => a.seat_epoch - b.seat_epoch);
+  const e = [];
+  const seen = new Set();
+  let expected = 0;
+  for (const r of chain) {
+    if (seen.has(r.seat_epoch)) {
+      e.push(`duplicate custody record at seat_epoch ${r.seat_epoch} (id: ${r.id}) — only the first appended is valid`);
+      continue;
+    }
+    seen.add(r.seat_epoch);
+    if (r.seat_epoch !== expected) {
+      e.push(`seat_epoch gap: expected ${expected}, found ${r.seat_epoch} (id: ${r.id})`);
+    }
+    expected = r.seat_epoch + 1;
+  }
+  return e;
+}
+
 // Validate any record: dispatches by r.record type.
 function validateRecord(r) {
   if (!r || typeof r !== "object") return ["record must be a JSON object"];
@@ -160,7 +282,8 @@ function validateRecord(r) {
     case "reconcile": return validateReconcileRecord(r);
     case "outcome": return validateOutcomeRecord(r);
     case "delegation": return validateDelegationRecord(r);
-    default: return [`unknown record type: "${r.record}" — must be decision, reconcile, outcome, or delegation`];
+    case "custody": return validateCustodyRecord(r);
+    default: return [`unknown record type: "${r.record}" — must be decision, reconcile, outcome, delegation, or custody`];
   }
 }
 
@@ -171,11 +294,16 @@ module.exports = {
   validateReconcileRecord,
   validateOutcomeRecord,
   validateDelegationRecord,
+  validateCustodyRecord,
+  validateCustodyChain,
   validateRecord,
   FALSIFIER_TYPES,
   RECONSTRUCTION_CLASSES,
   RESOLUTION_STATES,
   OUTCOME_STATUSES,
   SUB_OUTCOME_STATUSES,
-  RESOLUTION_POLICIES
+  RESOLUTION_POLICIES,
+  CUSTODY_REASONS,
+  MEMBER_ROLES,
+  MEMBER_STATES
 };

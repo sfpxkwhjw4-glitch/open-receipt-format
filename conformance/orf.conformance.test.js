@@ -29,6 +29,8 @@ const {
   validateReconcileRecord,
   validateOutcomeRecord,
   validateDelegationRecord,
+  validateCustodyRecord,
+  validateCustodyChain,
   validateRecord
 } = require("./validate");
 const orf = require("../reference/recorder");
@@ -733,4 +735,173 @@ test("conformance: sub_outcome status does not accept in_progress (v0.9)", () =>
     sub_outcomes: [{ decision_id: "sub-a", status: "in_progress" }]
   });
   assert.ok(e.some((m) => m.includes("status must be one of")));
+});
+
+// ─── v0.10: custody records and the coordinator seat ─────────────────────────
+
+function custodyRecord(o = {}) {
+  return Object.assign(
+    {
+      orf_version: "0.10",
+      record: "custody",
+      recorded_at: "2026-09-05T17:12:00Z",
+      id: "custody-0005",
+      council: "orf-dev-council",
+      seat_epoch: 5,
+      from_agent: "chatgpt-5",
+      to_agent: "claude-opus-5",
+      reason: "budget_low"
+    },
+    o
+  );
+}
+
+test("conformance: a v0.10 handoff record produced by the reference implementation validates", () => {
+  const r = orf.buildCustody(
+    {
+      id: "custody-0005", council: "orf-dev-council", seat_epoch: 5,
+      from_agent: "chatgpt-5", to_agent: "claude-opus-5", reason: "budget_low",
+      budget: { window_seconds: 18000, remaining_fraction: 0.06, resets_at: "2026-09-05T21:00:00Z" },
+      open_decisions: ["deploy-cfg-v2", "orf://gemini-ledger/import-batch-7"],
+      roster: [
+        { agent: "chatgpt-5", role: "hand", status: "exhausted", remaining_fraction: 0.06, resets_at: "2026-09-05T21:00:00Z" },
+        { agent: "claude-opus-5", role: "coordinator", status: "available", remaining_fraction: 0.91, resets_at: "2026-09-05T22:30:00Z" }
+      ],
+      falsifier: { type: "predicate", value: "no custody record at seat_epoch 6 within 300s", window_seconds: 300 }
+    },
+    "2026-09-05T17:12:00Z"
+  );
+  assert.deepEqual(validateCustodyRecord(r), []);
+  assert.deepEqual(validateRecord(r), [], "validateRecord dispatches custody records");
+});
+
+test("conformance: validateRecord recognizes custody as a record type", () => {
+  const e = validateRecord({ record: "council" });
+  assert.ok(e[0].includes("must be decision, reconcile, outcome, delegation, or custody"));
+});
+
+test("conformance: custody requires council and seat_epoch", () => {
+  const noCouncil = custodyRecord();
+  delete noCouncil.council;
+  assert.ok(validateCustodyRecord(noCouncil).some((m) => m.includes("council is required")));
+
+  const noEpoch = custodyRecord();
+  delete noEpoch.seat_epoch;
+  assert.ok(validateCustodyRecord(noEpoch).some((m) => m.includes("seat_epoch must be a non-negative integer")));
+});
+
+test("conformance: custody rejects an unknown reason", () => {
+  const e = validateCustodyRecord(custodyRecord({ reason: "vibes" }));
+  assert.ok(e.some((m) => m.includes("reason must be one of")));
+});
+
+test("conformance: invariant 2 — a custody record must move the seat", () => {
+  const e = validateCustodyRecord(custodyRecord({ to_agent: "chatgpt-5" }));
+  assert.ok(e.some((m) => m.includes("to_agent must differ from from_agent")));
+});
+
+test("conformance: invariant 3 — a null from_agent is a claim, not a transfer", () => {
+  assert.deepEqual(
+    validateCustodyRecord(custodyRecord({ seat_epoch: 0, from_agent: null, reason: "seat_claimed" })),
+    [],
+    "epoch 0 with reason seat_claimed conforms"
+  );
+  const e = validateCustodyRecord(custodyRecord({ from_agent: null, reason: "budget_low" }));
+  assert.ok(e.some((m) => m.includes("from_agent may be null only at seat_epoch 0")));
+});
+
+test("conformance: invariant 4 — dormancy requires council_exhausted and resume_at", () => {
+  const noResume = custodyRecord({ to_agent: null, reason: "council_exhausted" });
+  assert.ok(validateCustodyRecord(noResume).some((m) => m.includes("resume_at is absent")));
+
+  const wrongReason = custodyRecord({ to_agent: null, reason: "voluntary", resume_at: "2026-09-05T21:00:00Z" });
+  assert.ok(validateCustodyRecord(wrongReason).some((m) => m.includes("council_exhausted")));
+
+  const ok = custodyRecord({
+    to_agent: null, reason: "council_exhausted", resume_at: "2026-09-05T21:00:00Z",
+    roster: [
+      { agent: "chatgpt-5", status: "exhausted", resets_at: "2026-09-05T21:00:00Z" },
+      { agent: "grok-4.6", status: "exhausted", resets_at: "2026-09-06T00:05:00Z" }
+    ]
+  });
+  assert.deepEqual(validateCustodyRecord(ok), [], "a well-formed dormancy record conforms");
+});
+
+test("conformance: resume_at must be the earliest reset among exhausted members", () => {
+  const late = custodyRecord({
+    to_agent: null, reason: "council_exhausted",
+    resume_at: "2026-09-06T00:05:00Z",
+    roster: [
+      { agent: "chatgpt-5", status: "exhausted", resets_at: "2026-09-05T21:00:00Z" },
+      { agent: "grok-4.6", status: "exhausted", resets_at: "2026-09-06T00:05:00Z" }
+    ]
+  });
+  const e = validateCustodyRecord(late);
+  assert.ok(e.some((m) => m.includes("earliest resets_at")), "resume_at must be when work CAN resume, not later");
+});
+
+test("conformance: custody rejects a malformed budget or roster", () => {
+  assert.ok(
+    validateCustodyRecord(custodyRecord({ budget: { remaining_fraction: 2 } })).some((m) =>
+      m.includes("budget.remaining_fraction")
+    )
+  );
+  assert.ok(
+    validateCustodyRecord(custodyRecord({ budget: { window_seconds: 0 } })).some((m) =>
+      m.includes("budget.window_seconds")
+    )
+  );
+  assert.ok(
+    validateCustodyRecord(custodyRecord({ roster: [{ role: "hand" }] })).some((m) => m.includes("roster[0].agent is required"))
+  );
+  assert.ok(
+    validateCustodyRecord(custodyRecord({ roster: [{ agent: "x", status: "tired" }] })).some((m) =>
+      m.includes("roster[0].status must be one of")
+    )
+  );
+});
+
+test("conformance: open_decisions must be an array of non-empty strings", () => {
+  assert.ok(validateCustodyRecord(custodyRecord({ open_decisions: "d1" })).some((m) => m.includes("must be an array")));
+  assert.ok(validateCustodyRecord(custodyRecord({ open_decisions: ["", "d2"] })).some((m) => m.includes("open_decisions[0]")));
+  assert.deepEqual(validateCustodyRecord(custodyRecord({ open_decisions: ["d1", "orf://other/d2"] })), []);
+});
+
+test("conformance: invariant 1 — the seat chain has no gaps and no duplicate epochs", () => {
+  const chain = [
+    custodyRecord({ id: "c0", seat_epoch: 0, from_agent: null, to_agent: "chatgpt-5", reason: "seat_claimed" }),
+    custodyRecord({ id: "c1", seat_epoch: 1, from_agent: "chatgpt-5", to_agent: "claude-opus-5" }),
+    custodyRecord({ id: "c2", seat_epoch: 2, from_agent: "claude-opus-5", to_agent: "grok-4.6" })
+  ];
+  assert.deepEqual(validateCustodyChain(chain, "orf-dev-council"), []);
+
+  const gapped = chain.concat([custodyRecord({ id: "c4", seat_epoch: 4, from_agent: "grok-4.6", to_agent: "chatgpt-5" })]);
+  assert.ok(validateCustodyChain(gapped, "orf-dev-council").some((m) => m.includes("seat_epoch gap: expected 3")));
+
+  const contested = chain.concat([custodyRecord({ id: "c2-dup", seat_epoch: 2, from_agent: "claude-opus-5", to_agent: "gemini-3.8-flash" })]);
+  assert.ok(validateCustodyChain(contested, "orf-dev-council").some((m) => m.includes("duplicate custody record at seat_epoch 2")));
+});
+
+test("conformance: the seat chain is scoped per council", () => {
+  const mixed = [
+    custodyRecord({ id: "a0", council: "council-a", seat_epoch: 0, from_agent: null, to_agent: "x", reason: "seat_claimed" }),
+    custodyRecord({ id: "b0", council: "council-b", seat_epoch: 0, from_agent: null, to_agent: "y", reason: "seat_claimed" })
+  ];
+  assert.deepEqual(validateCustodyChain(mixed, "council-a"), []);
+  assert.deepEqual(validateCustodyChain(mixed, "council-b"), []);
+});
+
+test("conformance: v0.9 records remain valid alongside v0.10 custody records", () => {
+  const v09 = {
+    orf_version: "0.9",
+    record: "outcome",
+    recorded_at: "2026-07-10T10:02:00Z",
+    decision_id: "parallel-batch",
+    observed_result: "all three sub-agents held",
+    falsifier_observed: false,
+    status: "held",
+    aggregate: { total: 3, held: 3, falsified: 0, undetermined: 0, partial: 0, pending: 0, sub_outcomes: [{ decision_id: "a", status: "held" }] }
+  };
+  assert.deepEqual(validateRecord(v09), [], "a v0.9 record is still conforming under v0.10");
+  assert.deepEqual(validateRecord(custodyRecord()), []);
 });

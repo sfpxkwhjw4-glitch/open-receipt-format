@@ -13,7 +13,7 @@ test("decision() builds a conforming orf_version record", () => {
     action: "wrote file", falsifier: "file absent on read-back",
     confidence: 0.9, reconClass: "irrecoverable"
   });
-  assert.equal(d.orf_version, "0.9");
+  assert.equal(d.orf_version, "0.10");
   assert.equal(d.record, "decision");
   assert.equal(d.id, "d1");
   assert.equal(d.actor_agent, "test-agent");
@@ -72,7 +72,7 @@ test("reconcile() builds a conforming reconcile record", () => {
     gapDetected: false,
     resolution: "completed"
   });
-  assert.equal(r.orf_version, "0.9");
+  assert.equal(r.orf_version, "0.10");
   assert.equal(r.record, "reconcile");
   assert.equal(r.id, "r1");
   assert.equal(r.open_decision_id, "d1");
@@ -106,7 +106,7 @@ test("reconcile() supports all three resolution states", () => {
 
 test("outcome() builds a conforming outcome record", () => {
   const o = h.outcome("d1", { observedResult: "file written", falsifierObserved: false });
-  assert.equal(o.orf_version, "0.9");
+  assert.equal(o.orf_version, "0.10");
   assert.equal(o.record, "outcome");
   assert.equal(o.decision_id, "d1");
   assert.equal(o.observed_result, "file written");
@@ -161,7 +161,7 @@ test("delegation() builds a conforming delegation record", () => {
     delegateLedger: "orf://monitor-agent/receipts",
     parentDecisionId: "cycle-2026-06-29"
   });
-  assert.equal(d.orf_version, "0.9");
+  assert.equal(d.orf_version, "0.10");
   assert.equal(d.record, "delegation");
   assert.equal(d.id, "del-1");
   assert.equal(d.delegating_agent, "orchestrator");
@@ -234,4 +234,69 @@ test("reconcile() accepts in_progress as priorOutcomeStatus", () => {
     priorOutcomeStatus: "in_progress"
   });
   assert.equal(r.prior_outcome_status, "in_progress");
+});
+
+// --- v0.10: custody records and succession -----------------------------------
+
+test("custody() stamps v0.10 and the custody record type", () => {
+  const c = h.custody("c1", { council: "k", seatEpoch: 1, from: "a", to: "b", reason: "budget_low" });
+  assert.equal(c.orf_version, "0.10");
+  assert.equal(c.record, "custody");
+  assert.equal(c.council, "k");
+  assert.equal(c.seat_epoch, 1);
+  assert.equal(c.from_agent, "a");
+  assert.equal(c.to_agent, "b");
+  assert.equal(c.reason, "budget_low");
+});
+
+test("custody() defaults from_agent and to_agent to null when omitted", () => {
+  const c = h.custody("c0", { council: "k", seatEpoch: 0, reason: "seat_claimed" });
+  assert.equal(c.from_agent, null);
+  assert.equal(c.to_agent, null);
+});
+
+test("custody() carries the handoff inheritance and normalizes a string falsifier", () => {
+  const c = h.custody("c1", {
+    council: "k", seatEpoch: 3, from: "a", to: "b", reason: "budget_low",
+    budget: { window_seconds: 18000, remaining_fraction: 0.08, resets_at: "2026-09-05T21:00:00Z" },
+    openDecisions: ["d1", "orf://k/d2"],
+    handoffLedger: "orf://k/b-ledger",
+    falsifier: "no custody record at seat_epoch 4 within 300s"
+  });
+  assert.deepEqual(c.open_decisions, ["d1", "orf://k/d2"]);
+  assert.equal(c.budget.remaining_fraction, 0.08);
+  assert.equal(c.handoff_ledger, "orf://k/b-ledger");
+  assert.deepEqual(c.falsifier, { type: "string", value: "no custody record at seat_epoch 4 within 300s" });
+});
+
+test("custody() records dormancy with a resume_at", () => {
+  const c = h.custody("c9", {
+    council: "k", seatEpoch: 9, from: "d", to: null,
+    reason: "council_exhausted", resumeAt: "2026-09-05T21:00:00Z"
+  });
+  assert.equal(c.to_agent, null);
+  assert.equal(c.resume_at, "2026-09-05T21:00:00Z");
+});
+
+test("custody() omits absent optional fields", () => {
+  const c = h.custody("c1", { council: "k", seatEpoch: 1, from: "a", to: "b", reason: "voluntary" });
+  for (const k of ["budget", "roster", "open_decisions", "resume_at", "handoff_ledger", "notes", "falsifier"]) {
+    assert.ok(!(k in c), `expected ${k} to be absent`);
+  }
+});
+
+test("helper nextSeat matches the reference implementation's succession rule", () => {
+  const roster = [
+    { agent: "chatgpt-5", role: "hand", status: "available", remaining_fraction: 0.31, resets_at: "2026-09-05T21:00:00Z" },
+    { agent: "claude-opus-5", role: "hand", status: "available", remaining_fraction: 0.91, resets_at: "2026-09-05T22:30:00Z" },
+    { agent: "grok-4.6", role: "hand", status: "onboarding", remaining_fraction: 1.0, resets_at: "2026-09-06T00:05:00Z" }
+  ];
+  assert.equal(h.nextSeat(roster, "chatgpt-5"), "claude-opus-5");
+  assert.equal(h.nextSeat(roster, "claude-opus-5"), "chatgpt-5");
+  assert.equal(h.nextSeat(roster.map((m) => Object.assign({}, m, { status: "exhausted" })), "x"), null);
+});
+
+test("CUSTODY_REASONS is exported for implementors", () => {
+  assert.ok(h.CUSTODY_REASONS.includes("council_exhausted"));
+  assert.equal(h.CUSTODY_REASONS.length, 7);
 });

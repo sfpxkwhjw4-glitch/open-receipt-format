@@ -244,3 +244,16 @@ orchestrator receipt chains.
    must read B's ledger after the fact to find the matching record. One convention: require
    that B's decision ID incorporate the invocation's `action_idempotency_key`, making it
    predictable. This is a convention, not a spec rule.
+
+---
+
+## The other axis: `custody` (v0.10)
+
+`delegation` records the *vertical* relationship — an orchestrator invoking a sub-agent
+while keeping authority. It does not describe what happens when authority itself moves:
+one peer handing the coordinator role to another because its budget ran out.
+
+That is the `custody` record, added in v0.10. The two are complements, not alternatives —
+a coordinator writes `delegation` records all cycle long and one `custody` record when it
+leaves. See [`council-protocol.md`](council-protocol.md) and
+[`spec/orf-v0.10.md`](../spec/orf-v0.10.md).
