@@ -1,9 +1,13 @@
 "use strict";
-// ORF v0.9 — drop-in helper. Zero dependencies. Copy into your project or require directly.
-// Full spec: spec/orf-v0.9.md  Full reference: reference/recorder.js
+// ORF v0.10 — drop-in helper. Zero dependencies. Copy into your project or require directly.
+// Full spec: spec/orf-v0.10.md  Full reference: reference/recorder.js
 
-const V = "0.9";
+const V = "0.10";
 const RESOLUTION_POLICIES = ["any_falsified_is_failure", "majority_held_is_success", "custom"];
+const CUSTODY_REASONS = [
+  "seat_claimed", "budget_low", "budget_exhausted", "voluntary",
+  "unresponsive", "preempted_by_user", "council_exhausted"
+];
 const now = () => new Date().toISOString();
 const normF = (f) => (typeof f === "string" ? { type: "string", value: f } : f);
 const diff = (f) => (f === true ? "falsified" : f === false ? "held" : "undetermined");
@@ -47,6 +51,7 @@ function decision(id, opts = {}) {
 // opts.notes               — explanation when resolution is ambiguous
 // opts.priorOutcomeStatus  — (v0.5) optional: "held"|"falsified"|"undetermined"|"partial"|"in_progress"
 //                            records what was found on the prior outcome, making reconcile self-contained
+//                            (v0.10) also used when reconciling a predecessor's open_decisions after a seat handoff
 function reconcile(id, opts = {}) {
   const r = {
     orf_version: V, record: "reconcile", recorded_at: now(), id,
@@ -109,4 +114,56 @@ function delegation(id, opts = {}) {
   return r;
 }
 
-module.exports = { decision, reconcile, outcome, delegation, RESOLUTION_POLICIES };
+// Emit a custody receipt when the coordinator seat moves. New in v0.10.
+// `delegation` is vertical (orchestrator -> sub-agent); `custody` is horizontal
+// (peer -> peer). Write one before you run out of budget, not after.
+// id                   — unique within the council ledger
+// opts.council         — council name; scopes seatEpoch
+// opts.seatEpoch       — integer, previous epoch + 1 (fences the seat)
+// opts.from            — outgoing holder; null only when claiming an empty seat
+// opts.to              — incoming holder; null records council dormancy
+// opts.reason          — "seat_claimed" | "budget_low" | "budget_exhausted" | "voluntary"
+//                        | "unresponsive" | "preempted_by_user" | "council_exhausted"
+// opts.budget          — { window_seconds, remaining_fraction, resets_at, unit? }
+// opts.roster          — [{ agent, role, status, resets_at, remaining_fraction, capabilities? }]
+// opts.openDecisions   — ids/orf:// URIs the successor MUST reconcile before dispatching
+// opts.resumeAt        — required when `to` is null: earliest resets_at among exhausted members
+// opts.handoffLedger   — orf:// URI where the successor writes, if different
+// opts.notes           — explanation; expected for "unresponsive"/"preempted_by_user"
+// opts.falsifier       — what would show the handoff failed
+function custody(id, opts = {}) {
+  const r = {
+    orf_version: V, record: "custody", recorded_at: now(), id,
+    council: opts.council,
+    seat_epoch: Number(opts.seatEpoch),
+    from_agent: opts.from === undefined ? null : opts.from,
+    to_agent: opts.to === undefined ? null : opts.to,
+    reason: opts.reason
+  };
+  if (opts.budget) r.budget = opts.budget;
+  if (opts.roster) r.roster = opts.roster;
+  if (opts.openDecisions) r.open_decisions = opts.openDecisions;
+  if (opts.resumeAt) r.resume_at = opts.resumeAt;
+  if (opts.handoffLedger) r.handoff_ledger = opts.handoffLedger;
+  if (opts.notes) r.notes = opts.notes;
+  if (opts.falsifier !== undefined) r.falsifier = normF(opts.falsifier);
+  return r;
+}
+
+// Deterministic succession (v0.10): greatest remaining_fraction among eligible
+// members, ties by earliest resets_at, then by smallest agent id. Every member
+// computes the same answer, so a holder that dies mid-handoff strands nothing.
+// Returns null when no member is eligible — that is the dormancy signal.
+function nextSeat(roster, outgoing) {
+  const eligible = (roster || []).filter(
+    (m) => m && m.agent && m.agent !== outgoing && m.role !== "observer" && m.status === "available"
+  );
+  if (!eligible.length) return null;
+  return eligible.slice().sort((a, b) =>
+    (Number(b.remaining_fraction ?? 0) - Number(a.remaining_fraction ?? 0)) ||
+    String(a.resets_at || "").localeCompare(String(b.resets_at || "")) ||
+    String(a.agent).localeCompare(String(b.agent))
+  )[0].agent;
+}
+
+module.exports = { decision, reconcile, outcome, delegation, custody, nextSeat, RESOLUTION_POLICIES, CUSTODY_REASONS };
